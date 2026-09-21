@@ -877,7 +877,7 @@ function renderSolvedTicketsTable(tickets) {
         <td>
           <div class="customer-cell">
             <span class="customer-name">${escapeHtml(t.full_name)}</span>
-            <span class="customer-sub">${escapeHtml(t.city || '')}, ${escapeHtml(t.state || '')}</span>
+            ${formatLocation(t.city, t.state, t.phone) ? `<span class="customer-sub">${escapeHtml(formatLocation(t.city, t.state, t.phone))}</span>` : ''}
           </div>
         </td>
         <td>
@@ -997,7 +997,7 @@ function renderFraudTicketsTable(tickets) {
         <td>
           <div class="customer-cell">
             <span class="customer-name">${escapeHtml(t.full_name)}</span>
-            <span class="customer-sub">${escapeHtml(t.city || '')}, ${escapeHtml(t.state || '')}</span>
+            ${formatLocation(t.city, t.state, t.phone) ? `<span class="customer-sub">${escapeHtml(formatLocation(t.city, t.state, t.phone))}</span>` : ''}
           </div>
         </td>
         <td>
@@ -1612,7 +1612,7 @@ async function loadCustomers() {
           </div>
         </td>
         <td><span style="font-size: 12px; color: var(--text-muted);">${escapeHtml(c.email)}</span></td>
-        <td><span style="font-size: 12px;">${escapeHtml(c.city || 'N/A')}, ${escapeHtml(c.state || '')}</span></td>
+        <td><span style="font-size: 12px;">${escapeHtml(formatLocation(c.city, c.state) || 'N/A')}</span></td>
         <td><span class="code-font" style="color: var(--text-main);">${c.account_number || 'ACT-PENDING'}</span></td>
         <td><span class="tag-pill tag-cyan">${c.account_type || 'CHECKING'}</span></td>
         <td><span class="amount-font highlight-emerald">${formatCurrency(c.balance)}</span></td>
@@ -1900,6 +1900,14 @@ function getStatusBadgeHtml(status) {
   if (s === "UNDER_INVESTIGATION") return `<span class="tag-pill tag-investigating"><i class="fa-solid fa-clock"></i> In Progress</span>`;
   if (s === "OPEN" || s === "NEW") return `<span class="tag-pill tag-open"><i class="fa-solid fa-bolt"></i> Urgent Open</span>`;
   return `<span class="tag-pill tag-investigating"><i class="fa-solid fa-clock"></i> ${escapeHtml(status)}</span>`;
+}
+
+function formatLocation(city, state, fallback) {
+  const c = (city || '').trim();
+  const s = (state || '').trim();
+  if (c && s) return `${c}, ${s}`;
+  if (c || s) return c || s;
+  return fallback ? (fallback || '').trim() : '';
 }
 
 function formatCurrency(val) {
