@@ -1,6 +1,8 @@
-# Dummy Bank Portal — Fraud Detection & RPA Intake System
+# Dummy Bank Portal — Fraud Detection & RPA Intake System (Version 2.0)
 
-An enterprise-grade, high-performance **Bank Fraud Case Management & Investigation System** designed to bridge automated Robotic Process Automation (**AutomationEdge Process Studio**) intake pipelines with a transactional **PostgreSQL** backend and a responsive operations dashboard.
+An enterprise-grade, high-performance **Bank Fraud Case Management & Investigation System** designed to bridge automated Robotic Process Automation (**AutomationEdge Process Studio**) intake pipelines with a transactional **PostgreSQL 16** backend and a responsive operations dashboard.
+
+> 📖 **Full Technical Release Report:** See [`PROJECT_REPORT_V2.md`](./PROJECT_REPORT_V2.md) for full architectural specifications, PostgreSQL FTS, DB triggers, table partitioning, and benchmark results.
 
 ---
 
