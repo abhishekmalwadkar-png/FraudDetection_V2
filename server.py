@@ -378,12 +378,73 @@ def api_overview():
         conn.close()
 
 @app.get("/api/fraud-tickets", tags=["Fraud Operations"])
-def api_get_fraud_tickets():
-    """List all recorded fraud incidents sorted by most recent."""
+def api_get_fraud_tickets(
+    page: Optional[int] = None,
+    page_size: Optional[int] = None,
+    q: Optional[str] = None,
+    status: Optional[str] = None,
+    severity: Optional[str] = None,
+    assigned_to: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None
+):
+    """List recorded fraud incidents with optional FTS search, filtering, and server-side pagination."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        sql = """
+        where_clauses = []
+        params = []
+
+        if q and q.strip():
+            where_clauses.append("t.tsv_search @@ plainto_tsquery('english', %s)")
+            params.append(q.strip())
+        
+        if status and status.strip() and status.upper() != "ALL":
+            where_clauses.append("t.status = %s")
+            params.append(status.strip().upper())
+            
+        if severity and severity.strip() and severity.upper() != "ALL":
+            where_clauses.append("t.severity = %s")
+            params.append(severity.strip().upper())
+            
+        if assigned_to and assigned_to.strip() and assigned_to != "ALL":
+            where_clauses.append("t.assigned_investigator = %s")
+            params.append(assigned_to.strip())
+
+        if date_from and date_from.strip():
+            where_clauses.append("t.incident_date >= %s")
+            params.append(date_from.strip())
+
+        if date_to and date_to.strip():
+            where_clauses.append("t.incident_date <= %s")
+            params.append(date_to.strip() + " 23:59:59")
+
+        where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
+        is_paginated = page is not None or page_size is not None
+        total_count = None
+        
+        if is_paginated:
+            count_sql = f"""
+                SELECT COUNT(*) 
+                FROM fraud_tickets t
+                JOIN customers c ON t.customer_id = c.customer_id
+                {where_sql};
+            """
+            cursor.execute(count_sql, tuple(params))
+            total_count = cursor.fetchone()[0]
+
+        order_sql = "ORDER BY ts_rank(t.tsv_search, plainto_tsquery('english', %s)) DESC, t.ticket_id DESC" if (q and q.strip()) else "ORDER BY t.ticket_id DESC"
+        query_params = [q.strip()] + params if (q and q.strip()) else params
+
+        limit_sql = ""
+        if is_paginated:
+            p = max(1, page or 1)
+            ps = max(1, min(200, page_size or 10))
+            offset = (p - 1) * ps
+            limit_sql = f"LIMIT {ps} OFFSET {offset}"
+
+        sql = f"""
             SELECT 
                 t.ticket_id, t.ticket_number, t.customer_id, c.customer_code, c.full_name, c.email, c.phone, c.risk_tier,
                 t.account_number, ca.account_type, ca.balance, ca.status as account_status,
@@ -394,9 +455,11 @@ def api_get_fraud_tickets():
             FROM fraud_tickets t
             JOIN customers c ON t.customer_id = c.customer_id
             LEFT JOIN customer_accounts ca ON (t.customer_id = ca.customer_id AND t.account_number = ca.account_number)
-            ORDER BY t.ticket_id DESC;
+            {where_sql}
+            {order_sql}
+            {limit_sql};
         """
-        cursor.execute(sql)
+        cursor.execute(sql, tuple(query_params))
         rows = cursor.fetchall()
         
         tickets = []
@@ -429,7 +492,21 @@ def api_get_fraud_tickets():
                 "action_taken": r[23],
                 "created_at": r[24]
             })
-        return clean_db_record(tickets)
+        cleaned_tickets = clean_db_record(tickets)
+        if is_paginated:
+            import math
+            p = max(1, page or 1)
+            ps = max(1, min(200, page_size or 10))
+            return {
+                "items": cleaned_tickets,
+                "total": total_count,
+                "page": p,
+                "page_size": ps,
+                "total_pages": math.ceil(total_count / ps) if total_count else 1,
+                "has_next": (p * ps) < total_count if total_count else False,
+                "has_prev": p > 1
+            }
+        return cleaned_tickets
     finally:
         cursor.close()
         conn.close()
@@ -828,12 +905,42 @@ def api_freeze_account(payload: FreezeAccountSchema, request: Request):
         conn.close()
 
 @app.get("/api/customers", tags=["Banking Core"])
-def api_get_customers():
-    """List customer profiles, account balances, and aggregate fraud report counts."""
+def api_get_customers(
+    page: Optional[int] = None,
+    page_size: Optional[int] = None,
+    q: Optional[str] = None,
+    risk_tier: Optional[str] = None
+):
+    """List customer profiles with optional FTS search, risk tier filter, and pagination."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("""
+        where_clauses = []
+        params = []
+        if q and q.strip():
+            where_clauses.append("c.tsv_search @@ plainto_tsquery('english', %s)")
+            params.append(q.strip())
+        if risk_tier and risk_tier.strip() and risk_tier.upper() != "ALL":
+            where_clauses.append("c.risk_tier = %s")
+            params.append(risk_tier.strip().upper())
+            
+        where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+        
+        is_paginated = page is not None or page_size is not None
+        total_count = None
+        if is_paginated:
+            count_sql = f"SELECT COUNT(DISTINCT c.customer_id) FROM customers c {where_sql};"
+            cursor.execute(count_sql, tuple(params))
+            total_count = cursor.fetchone()[0]
+
+        limit_sql = ""
+        if is_paginated:
+            p = max(1, page or 1)
+            ps = max(1, min(200, page_size or 50))
+            offset = (p - 1) * ps
+            limit_sql = f"LIMIT {ps} OFFSET {offset}"
+
+        sql = f"""
             SELECT 
                 c.customer_id, c.customer_code, c.full_name, c.email, c.phone, c.city, c.state, c.risk_tier,
                 ca.account_number, ca.account_type, ca.balance, ca.status as account_status, ca.branch,
@@ -841,10 +948,13 @@ def api_get_customers():
             FROM customers c
             LEFT JOIN customer_accounts ca ON c.customer_id = ca.customer_id
             LEFT JOIN fraud_tickets ft ON c.customer_id = ft.customer_id
+            {where_sql}
             GROUP BY c.customer_id, c.customer_code, c.full_name, c.email, c.phone, c.city, c.state, c.risk_tier,
                      ca.account_number, ca.account_type, ca.balance, ca.status, ca.branch
-            ORDER BY c.customer_id ASC;
-        """)
+            ORDER BY c.customer_id ASC
+            {limit_sql};
+        """
+        cursor.execute(sql, tuple(params))
         rows = cursor.fetchall()
         customers = []
         for r in rows:
@@ -856,7 +966,21 @@ def api_get_customers():
                 "account_status": r[11] or 'ACTIVE', "branch": r[12],
                 "fraud_reports_count": r[13]
             })
-        return clean_db_record(customers)
+        cleaned_cust = clean_db_record(customers)
+        if is_paginated:
+            import math
+            p = max(1, page or 1)
+            ps = max(1, min(200, page_size or 50))
+            return {
+                "items": cleaned_cust,
+                "total": total_count,
+                "page": p,
+                "page_size": ps,
+                "total_pages": math.ceil(total_count / ps) if total_count else 1,
+                "has_next": (p * ps) < total_count if total_count else False,
+                "has_prev": p > 1
+            }
+        return cleaned_cust
     finally:
         cursor.close()
         conn.close()
@@ -1064,20 +1188,70 @@ def api_download_audit_pdf(request: Request):
         conn.close()
 
 @app.get("/api/transactions", tags=["Banking Core"])
-def api_get_transactions():
-    """Retrieve forensic ledger of transactions with fraud risk scores and flags."""
+def api_get_transactions(
+    page: Optional[int] = None,
+    page_size: Optional[int] = None,
+    q: Optional[str] = None,
+    flagged_only: Optional[bool] = False,
+    min_risk: Optional[int] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None
+):
+    """Retrieve forensic ledger of transactions with partition pruning, FTS, and server-side pagination."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("""
+        where_clauses = []
+        params = []
+        
+        if q and q.strip():
+            where_clauses.append("to_tsvector('english', coalesce(t.customer_name, '') || ' ' || coalesce(t.txn_reference, '') || ' ' || coalesce(t.account_number, '') || ' ' || coalesce(t.merchant_or_recipient, '') || ' ' || coalesce(t.ip_address, '')) @@ plainto_tsquery('english', %s)")
+            params.append(q.strip())
+            
+        if flagged_only:
+            where_clauses.append("t.is_fraud_flagged = TRUE")
+            
+        if min_risk is not None:
+            where_clauses.append("t.fraud_risk_score >= %s")
+            params.append(min_risk)
+            
+        if date_from and date_from.strip():
+            where_clauses.append("t.txn_time >= %s")
+            params.append(date_from.strip())
+            
+        if date_to and date_to.strip():
+            where_clauses.append("t.txn_time <= %s")
+            params.append(date_to.strip() + " 23:59:59")
+            
+        where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+        
+        is_paginated = page is not None or page_size is not None
+        total_count = None
+        
+        if is_paginated:
+            count_sql = f"SELECT COUNT(*) FROM transactions t JOIN customers c ON t.customer_id = c.customer_id {where_sql};"
+            cursor.execute(count_sql, tuple(params))
+            total_count = cursor.fetchone()[0]
+            
+        limit_sql = ""
+        if is_paginated:
+            p = max(1, page or 1)
+            ps = max(1, min(200, page_size or 50))
+            offset = (p - 1) * ps
+            limit_sql = f"LIMIT {ps} OFFSET {offset}"
+            
+        sql = f"""
             SELECT 
                 t.txn_id, t.txn_reference, t.customer_id, c.full_name, t.account_number,
                 t.amount, t.txn_type, t.merchant_or_recipient, t.channel, t.ip_address,
                 t.is_fraud_flagged, t.fraud_risk_score, t.status, t.txn_time
             FROM transactions t
             JOIN customers c ON t.customer_id = c.customer_id
-            ORDER BY t.txn_id DESC;
-        """)
+            {where_sql}
+            ORDER BY t.txn_time DESC, t.txn_id DESC
+            {limit_sql};
+        """
+        cursor.execute(sql, tuple(params))
         rows = cursor.fetchall()
         txns = []
         for r in rows:
@@ -1088,7 +1262,21 @@ def api_get_transactions():
                 "is_fraud_flagged": r[10], "fraud_risk_score": r[11], "status": r[12],
                 "txn_time": r[13]
             })
-        return clean_db_record(txns)
+        cleaned_txns = clean_db_record(txns)
+        if is_paginated:
+            import math
+            p = max(1, page or 1)
+            ps = max(1, min(200, page_size or 50))
+            return {
+                "items": cleaned_txns,
+                "total": total_count,
+                "page": p,
+                "page_size": ps,
+                "total_pages": math.ceil(total_count / ps) if total_count else 1,
+                "has_next": (p * ps) < total_count if total_count else False,
+                "has_prev": p > 1
+            }
+        return cleaned_txns
     finally:
         cursor.close()
         conn.close()
@@ -1140,24 +1328,71 @@ def api_get_analytics():
         conn.close()
 
 @app.get("/api/audit-logs", tags=["Auditing & Forensics"])
-def api_get_audit_logs():
-    """Retrieve immutable audit log history (recent 100 entries)."""
+def api_get_audit_logs(
+    page: Optional[int] = None,
+    page_size: Optional[int] = None,
+    q: Optional[str] = None,
+    ticket_number: Optional[str] = None
+):
+    """Retrieve immutable audit log history with optional FTS and pagination."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("""
-            SELECT log_id, ticket_number, actor, action, details, ip_address, created_at
+        where_clauses = []
+        params = []
+        if q and q.strip():
+            where_clauses.append("(actor ILIKE %s OR action ILIKE %s OR details ILIKE %s OR customer_name ILIKE %s)")
+            kw = f"%{q.strip()}%"
+            params.extend([kw, kw, kw, kw])
+        if ticket_number and ticket_number.strip():
+            where_clauses.append("ticket_number = %s")
+            params.append(ticket_number.strip())
+            
+        where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+        
+        is_paginated = page is not None or page_size is not None
+        total_count = None
+        if is_paginated:
+            count_sql = f"SELECT COUNT(*) FROM audit_logs {where_sql};"
+            cursor.execute(count_sql, tuple(params))
+            total_count = cursor.fetchone()[0]
+
+        limit_sql = "LIMIT 100"
+        if is_paginated:
+            p = max(1, page or 1)
+            ps = max(1, min(200, page_size or 50))
+            offset = (p - 1) * ps
+            limit_sql = f"LIMIT {ps} OFFSET {offset}"
+
+        sql = f"""
+            SELECT log_id, ticket_number, customer_name, actor, action, details, ip_address, created_at
             FROM audit_logs
+            {where_sql}
             ORDER BY log_id DESC
-            LIMIT 100;
-        """)
+            {limit_sql};
+        """
+        cursor.execute(sql, tuple(params))
         logs = []
         for r in cursor.fetchall():
             logs.append({
-                "log_id": r[0], "ticket_number": r[1], "actor": r[2], "action": r[3],
-                "details": r[4], "ip_address": r[5], "created_at": r[6]
+                "log_id": r[0], "ticket_number": r[1], "customer_name": r[2], "actor": r[3], "action": r[4],
+                "details": r[5], "ip_address": r[6], "created_at": r[7]
             })
-        return clean_db_record(logs)
+        cleaned_logs = clean_db_record(logs)
+        if is_paginated:
+            import math
+            p = max(1, page or 1)
+            ps = max(1, min(200, page_size or 50))
+            return {
+                "items": cleaned_logs,
+                "total": total_count,
+                "page": p,
+                "page_size": ps,
+                "total_pages": math.ceil(total_count / ps) if total_count else 1,
+                "has_next": (p * ps) < total_count if total_count else False,
+                "has_prev": p > 1
+            }
+        return cleaned_logs
     finally:
         cursor.close()
         conn.close()
