@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=5.3">
+  <link rel="stylesheet" href="styles.css?v=5.4">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body class="bank-portal-theme">
@@ -224,56 +224,91 @@
             </div>
           </div>
 
-          <!-- Right Column: Portal Shortcuts & Quick Links -->
-          <div class="dash-card">
-            <div class="dash-card-header">
-              <span><i class="fa-solid fa-cubes-stacked"></i> Portal Workspaces & Navigation</span>
-              <span class="card-badge">Direct Access</span>
+          <!-- Right Column: Money Recovery Rate & Quick Links -->
+          <div style="display: flex; flex-direction: column; gap: 20px;">
+            <div class="dash-card">
+              <div class="dash-card-header">
+                <span><i class="fa-solid fa-piggy-bank"></i> Money Recovery Rate</span>
+                <span class="card-badge">Safety Score</span>
+              </div>
+              <div class="recovery-metrics-box">
+                <div class="circular-metric" id="homeCircularMetric">
+                  <div class="metric-circle-inner">
+                    <span class="metric-circle-val" id="homeRecoveryRatePercent">61%</span>
+                    <span class="metric-circle-sub">Money Saved</span>
+                  </div>
+                </div>
+                <div class="recovery-details-list">
+                  <div class="rec-row">
+                    <span>Total Reported Amount:</span>
+                    <strong id="homeRecGrossVal">₹0.00</strong>
+                  </div>
+                  <div class="rec-row">
+                    <span>Money Recovered / Saved:</span>
+                    <strong class="highlight-emerald" id="homeRecRecoveredVal">₹0.00</strong>
+                  </div>
+                  <div class="rec-row">
+                    <span>Under Process:</span>
+                    <strong class="highlight-amber" id="homeRecPendingVal">₹0.00</strong>
+                  </div>
+                  <div class="rec-row">
+                    <span>Bank Guarantee:</span>
+                    <strong class="highlight-cyan">Fully Protected</strong>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div class="home-shortcuts-list">
-              <div class="home-shortcut-item" onclick="switchTab('tab-fraud-tickets')">
-                <div class="shortcut-icon icon-blue"><i class="fa-solid fa-clipboard-check"></i></div>
-                <div class="shortcut-info">
-                  <strong>Fraud Complaints Queue</strong>
-                  <p>Filter, multi-select, and take batch actions on incoming customer complaints.</p>
-                </div>
-                <i class="fa-solid fa-chevron-right shortcut-arrow"></i>
-              </div>
 
-              <div class="home-shortcut-item" onclick="switchTab('tab-dashboard')">
-                <div class="shortcut-icon icon-purple"><i class="fa-solid fa-chart-pie"></i></div>
-                <div class="shortcut-info">
-                  <strong>Executive Summary Dashboard</strong>
-                  <p>View recovery rate, scam breakdown by category, and channel analytics.</p>
-                </div>
-                <i class="fa-solid fa-chevron-right shortcut-arrow"></i>
+            <div class="dash-card">
+              <div class="dash-card-header">
+                <span><i class="fa-solid fa-cubes-stacked"></i> Portal Workspaces & Navigation</span>
+                <span class="card-badge">Direct Access</span>
               </div>
-
-              <div class="home-shortcut-item" onclick="switchTab('tab-customers')">
-                <div class="shortcut-icon icon-amber"><i class="fa-solid fa-users"></i></div>
-                <div class="shortcut-info">
-                  <strong>Customer Directory</strong>
-                  <p>Search registered accounts, KYC risk tiers, and balance details.</p>
+              <div class="home-shortcuts-list">
+                <div class="home-shortcut-item" onclick="switchTab('tab-fraud-tickets')">
+                  <div class="shortcut-icon icon-blue"><i class="fa-solid fa-clipboard-check"></i></div>
+                  <div class="shortcut-info">
+                    <strong>Fraud Complaints Queue</strong>
+                    <p>Filter, multi-select, and take batch actions on incoming customer complaints.</p>
+                  </div>
+                  <i class="fa-solid fa-chevron-right shortcut-arrow"></i>
                 </div>
-                <i class="fa-solid fa-chevron-right shortcut-arrow"></i>
-              </div>
 
-              <div class="home-shortcut-item" onclick="switchTab('tab-transactions')">
-                <div class="shortcut-icon icon-emerald"><i class="fa-solid fa-receipt"></i></div>
-                <div class="shortcut-info">
-                  <strong>Recent Transactions Monitor</strong>
-                  <p>Review real-time transaction ledger with automatic fraud risk flags.</p>
+                <div class="home-shortcut-item" onclick="switchTab('tab-dashboard')">
+                  <div class="shortcut-icon icon-purple"><i class="fa-solid fa-chart-pie"></i></div>
+                  <div class="shortcut-info">
+                    <strong>Executive Summary Dashboard</strong>
+                    <p>View recovery rate, scam breakdown by category, and channel analytics.</p>
+                  </div>
+                  <i class="fa-solid fa-chevron-right shortcut-arrow"></i>
                 </div>
-                <i class="fa-solid fa-chevron-right shortcut-arrow"></i>
-              </div>
 
-              <div class="home-shortcut-item" onclick="switchTab('tab-audit')">
-                <div class="shortcut-icon icon-cyan"><i class="fa-solid fa-clock-rotate-left"></i></div>
-                <div class="shortcut-info">
-                  <strong>History & Solved Archive</strong>
-                  <p>Access archive of all solved complaints and official staff audit logs.</p>
+                <div class="home-shortcut-item" onclick="switchTab('tab-customers')">
+                  <div class="shortcut-icon icon-amber"><i class="fa-solid fa-users"></i></div>
+                  <div class="shortcut-info">
+                    <strong>Customer Directory</strong>
+                    <p>Search registered accounts, KYC risk tiers, and balance details.</p>
+                  </div>
+                  <i class="fa-solid fa-chevron-right shortcut-arrow"></i>
                 </div>
-                <i class="fa-solid fa-chevron-right shortcut-arrow"></i>
+
+                <div class="home-shortcut-item" onclick="switchTab('tab-transactions')">
+                  <div class="shortcut-icon icon-emerald"><i class="fa-solid fa-receipt"></i></div>
+                  <div class="shortcut-info">
+                    <strong>Recent Transactions Monitor</strong>
+                    <p>Review real-time transaction ledger with automatic fraud risk flags.</p>
+                  </div>
+                  <i class="fa-solid fa-chevron-right shortcut-arrow"></i>
+                </div>
+
+                <div class="home-shortcut-item" onclick="switchTab('tab-audit')">
+                  <div class="shortcut-icon icon-cyan"><i class="fa-solid fa-clock-rotate-left"></i></div>
+                  <div class="shortcut-info">
+                    <strong>History & Solved Archive</strong>
+                    <p>Access archive of all solved complaints and official staff audit logs.</p>
+                  </div>
+                  <i class="fa-solid fa-chevron-right shortcut-arrow"></i>
+                </div>
               </div>
             </div>
           </div>
@@ -588,7 +623,7 @@
               <span class="card-badge">Safety Score</span>
             </div>
             <div class="recovery-metrics-box">
-              <div class="circular-metric">
+              <div class="circular-metric" id="dashCircularMetric">
                 <div class="metric-circle-inner">
                   <span class="metric-circle-val" id="recoveryRatePercent">74%</span>
                   <span class="metric-circle-sub">Money Saved</span>
@@ -1125,6 +1160,6 @@
   <!-- Toast Notification Container -->
   <div class="toast-container" id="toastContainer"></div>
 
-  <script src="app.js?v=5.3"></script>
+  <script src="app.js?v=5.4"></script>
 </body>
 </html>

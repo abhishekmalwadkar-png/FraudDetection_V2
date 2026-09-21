@@ -418,15 +418,26 @@ async function loadOverviewStats() {
 
     renderHomeUrgentList();
 
-    // Dashboard recovery
-    if (document.getElementById("recGrossVal")) {
-      document.getElementById("recGrossVal").textContent = formatCurrency(data.total_amount || 2185930);
-      document.getElementById("recRecoveredVal").textContent = formatCurrency(data.recovered_amount || 1621430);
-      const pending = (data.total_amount || 2185930) - (data.recovered_amount || 1621430);
-      document.getElementById("recPendingVal").textContent = formatCurrency(pending);
-      const pct = Math.round(((data.recovered_amount || 1) / (data.total_amount || 1)) * 100);
-      document.getElementById("recoveryRatePercent").textContent = `${pct}%`;
-    }
+    // Live Recovery Metrics for both Home & Dashboard tabs
+    const totalAmt = data.total_amount || 0;
+    const recoveredAmt = data.recovered_amount || 0;
+    const pendingAmt = Math.max(0, totalAmt - recoveredAmt);
+    const pct = totalAmt > 0 ? Math.round((recoveredAmt / totalAmt) * 100) : 0;
+    const deg = Math.round((pct / 100) * 360);
+
+    const updateRecoveryUI = (pctId, grossId, recId, pendId, metricId) => {
+      if (document.getElementById(pctId)) document.getElementById(pctId).textContent = `${pct}%`;
+      if (document.getElementById(grossId)) document.getElementById(grossId).textContent = formatCurrency(totalAmt);
+      if (document.getElementById(recId)) document.getElementById(recId).textContent = formatCurrency(recoveredAmt);
+      if (document.getElementById(pendId)) document.getElementById(pendId).textContent = formatCurrency(pendingAmt);
+      const metricEl = document.getElementById(metricId);
+      if (metricEl) {
+        metricEl.style.background = `conic-gradient(var(--emerald) 0deg ${deg}deg, #e2e8f0 ${deg}deg 360deg)`;
+      }
+    };
+
+    updateRecoveryUI("recoveryRatePercent", "recGrossVal", "recRecoveredVal", "recPendingVal", "dashCircularMetric");
+    updateRecoveryUI("homeRecoveryRatePercent", "homeRecGrossVal", "homeRecRecoveredVal", "homeRecPendingVal", "homeCircularMetric");
   } catch (err) {
     console.error("Error loading overview stats:", err);
   }
