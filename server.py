@@ -1,7 +1,8 @@
 """
 Dummy Bank Portal - Production Fraud Portal Backend & API Gateway
-Powered by Flask & Waitress (Multi-Threaded Production WSGI Server)
+Powered by FastAPI & Uvicorn (High-Concurrency ASGI Server)
 Connected live to PostgreSQL (bank_fraud_portal) via PooledDB.
+Interactive Swagger Documentation available at: /docs & /redoc
 """
 
 import os
@@ -11,10 +12,14 @@ import uuid
 import logging
 from decimal import Decimal
 from datetime import datetime, date, timezone
-from flask import Flask, request, jsonify, send_from_directory, make_response, g
-from flask.json.provider import DefaultJSONProvider
+from typing import Optional, Any, Dict, List, Union
+
+from fastapi import FastAPI, Request, Response, HTTPException, status, Depends
+from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field, field_validator
 import pg8000.dbapi
-import waitress
+import uvicorn
 
 from config import (
     APP_ENV, LOG_LEVEL,
@@ -32,7 +37,7 @@ from dbutils.pooled_db import PooledDB
 numeric_level = getattr(logging, LOG_LEVEL, logging.INFO)
 logging.basicConfig(
     level=numeric_level,
-    format='%(asctime)s [%(levelname)s] [Thread-%(thread)d] %(message)s'
+    format='%(asctime)s [%(levelname)s] [Worker-%(process)d] %(message)s'
 )
 logger = logging.getLogger("BankPortalServer")
 
@@ -46,24 +51,48 @@ METRICS = {
     "status_codes": {}
 }
 
-# Custom JSON Provider for Flask to serialize Decimals and datetimes cleanly
-class CustomFlaskJSONProvider(DefaultJSONProvider):
-    def default(self, obj):
-        if isinstance(obj, Decimal):
-            return float(obj)
-        elif isinstance(obj, (datetime, date)):
-            return obj.isoformat()
-        return super().default(obj)
+# -------------------------------------------------------------
+# Custom JSON Encoder helper
+# -------------------------------------------------------------
+def clean_db_record(obj: Any) -> Any:
+    """Helper to convert Decimals to float and datetimes to ISO strings recursively."""
+    if isinstance(obj, Decimal):
+        return float(obj)
+    elif isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    elif isinstance(obj, dict):
+        return {k: clean_db_record(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [clean_db_record(item) for item in obj]
+    return obj
 
-app = Flask(__name__, static_folder=".", static_url_path="")
-app.json = CustomFlaskJSONProvider(app)
+# -------------------------------------------------------------
+# FastAPI Application Initialization
+# -------------------------------------------------------------
+app = FastAPI(
+    title="Dummy Bank Portal - Fraud Detection & RPA Intake API",
+    description="Enterprise API Gateway for automated Robotic Process Automation (AutomationEdge) and Banking SOC Fraud Management.",
+    version="2.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json"
+)
+
+# Global Cross-Origin Resource Sharing (CORS) Middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["X-Request-ID"]
+)
 
 # -------------------------------------------------------------
 # Database Connection Pooling (Thread-Safe Warm Pool)
 # -------------------------------------------------------------
 logger.info(
-    f"Initializing PostgreSQL Connection Pool (min={DB_POOL_MIN_CACHED}, max={DB_POOL_MAX_CONNECTIONS}) to {DB_NAME}...",
-    extra={"request_id": "INIT"}
+    f"Initializing PostgreSQL Connection Pool (min={DB_POOL_MIN_CACHED}, max={DB_POOL_MAX_CONNECTIONS}) to {DB_NAME}..."
 )
 
 def create_db_pool():
@@ -82,7 +111,7 @@ def create_db_pool():
     )
 
 db_pool = create_db_pool()
-logger.info("[+] PostgreSQL Connection Pool is ready and active.", extra={"request_id": "INIT"})
+logger.info("[+] PostgreSQL Connection Pool is ready and active.")
 
 def get_db_connection(max_retries=2):
     """Retrieve an active, pre-connected PostgreSQL socket with automatic reconnection resilience."""
@@ -92,125 +121,67 @@ def get_db_connection(max_retries=2):
             return db_pool.connection()
         except Exception as e:
             last_err = e
-            logger.warning(f"Connection pool acquisition retry {attempt+1}/{max_retries}: {e}", extra={"request_id": getattr(g, "request_id", "SYS")})
+            logger.warning(f"Connection pool acquisition retry {attempt+1}/{max_retries}: {e}")
             time.sleep(0.1)
-    raise RuntimeError(f"Database connection pool exhausted or unreachable: {last_err}")
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail=f"Database connection pool exhausted or unreachable: {last_err}"
+    )
 
 # -------------------------------------------------------------
 # Middleware: Request Tracing, Latency & Access Logging
 # -------------------------------------------------------------
-@app.before_request
-def before_request_hook():
-    g.start_time = time.time()
-    # Read incoming request ID or generate a new trace UUID
+@app.middleware("http")
+async def request_metrics_and_tracing_middleware(request: Request, call_next):
+    t0 = time.time()
     req_id = request.headers.get("X-Request-ID") or f"REQ-{uuid.uuid4().hex[:12].upper()}"
-    g.request_id = req_id
+    request.state.request_id = req_id
     
-    # Update global metrics
+    # Update telemetry counters
     METRICS["total_requests"] += 1
-    endpoint = request.endpoint or request.path
+    endpoint = request.url.path
     METRICS["endpoints_hit"][endpoint] = METRICS["endpoints_hit"].get(endpoint, 0) + 1
-
-@app.after_request
-def after_request_hook(response):
-    req_id = getattr(g, "request_id", "UNKNOWN")
-    response.headers['X-Request-ID'] = req_id
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PATCH, OPTIONS'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-API-Key, X-Request-ID'
     
-    # Calculate duration
-    duration_ms = (time.time() - getattr(g, "start_time", time.time())) * 1000.0
-    status = response.status_code
-    METRICS["status_codes"][status] = METRICS["status_codes"].get(status, 0) + 1
-    
-    if status >= 400:
+    try:
+        response = await call_next(request)
+    except Exception as exc:
         METRICS["total_errors"] += 1
-        logger.warning(
-            f"{request.method} {request.path} {status} - {duration_ms:.2f}ms - IP: {request.remote_addr}",
-            extra={"request_id": req_id}
+        duration_ms = (time.time() - t0) * 1000.0
+        logger.error(f"{request.method} {request.url.path} 500 - {duration_ms:.2f}ms - Unhandled Exception: {exc}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": "Internal Server Error",
+                "message": "An unexpected server error occurred. Please contact the SOC operations team.",
+                "request_id": req_id,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            },
+            headers={"X-Request-ID": req_id}
         )
+
+    duration_ms = (time.time() - t0) * 1000.0
+    status_code = response.status_code
+    METRICS["status_codes"][status_code] = METRICS["status_codes"].get(status_code, 0) + 1
+    
+    response.headers["X-Request-ID"] = req_id
+    
+    client_ip = request.client.host if request.client else "unknown"
+    if status_code >= 400:
+        METRICS["total_errors"] += 1
+        logger.warning(f"{request.method} {request.url.path} {status_code} - {duration_ms:.2f}ms - IP: {client_ip}")
     else:
-        logger.info(
-            f"{request.method} {request.path} {status} - {duration_ms:.2f}ms - IP: {request.remote_addr}",
-            extra={"request_id": req_id}
-        )
+        logger.info(f"{request.method} {request.url.path} {status_code} - {duration_ms:.2f}ms - IP: {client_ip}")
+
     return response
 
-# Handle OPTIONS preflight globally
-@app.route('/<path:dummy>', methods=['OPTIONS'])
-@app.route('/', methods=['OPTIONS'])
-def handle_options(dummy=None):
-    return make_response('', 200)
-
 # -------------------------------------------------------------
-# Centralized JSON Error Handlers
+# Security & Auth Validation
 # -------------------------------------------------------------
-@app.errorhandler(400)
-def error_bad_request(e):
-    return jsonify({
-        "error": "Bad Request",
-        "message": str(getattr(e, "description", e)),
-        "request_id": getattr(g, "request_id", "UNKNOWN"),
-        "timestamp": datetime.now(timezone.utc).isoformat()
-    }), 400
-
-@app.errorhandler(401)
-def error_unauthorized(e):
-    return jsonify({
-        "error": "Unauthorized",
-        "message": "Valid API Key or Bearer token is required.",
-        "request_id": getattr(g, "request_id", "UNKNOWN"),
-        "timestamp": datetime.now(timezone.utc).isoformat()
-    }), 401
-
-@app.errorhandler(403)
-def error_forbidden(e):
-    return jsonify({
-        "error": "Forbidden",
-        "message": str(getattr(e, "description", "Action is forbidden.")),
-        "request_id": getattr(g, "request_id", "UNKNOWN"),
-        "timestamp": datetime.now(timezone.utc).isoformat()
-    }), 403
-
-@app.errorhandler(404)
-def error_not_found(e):
-    return jsonify({
-        "error": "Not Found",
-        "message": "The requested resource was not found on this server.",
-        "request_id": getattr(g, "request_id", "UNKNOWN"),
-        "timestamp": datetime.now(timezone.utc).isoformat()
-    }), 404
-
-@app.errorhandler(405)
-def error_method_not_allowed(e):
-    return jsonify({
-        "error": "Method Not Allowed",
-        "message": "The HTTP method is not supported for this endpoint.",
-        "request_id": getattr(g, "request_id", "UNKNOWN"),
-        "timestamp": datetime.now(timezone.utc).isoformat()
-    }), 405
-
-@app.errorhandler(500)
-def error_internal_server(e):
-    req_id = getattr(g, "request_id", "UNKNOWN")
-    logger.error(f"Internal Server Error: {e}", exc_info=True, extra={"request_id": req_id})
-    return jsonify({
-        "error": "Internal Server Error",
-        "message": "An unexpected server error occurred. Please contact the SOC operations team.",
-        "request_id": req_id,
-        "timestamp": datetime.now(timezone.utc).isoformat()
-    }), 500
-
-# -------------------------------------------------------------
-# Security & Helper Functions
-# -------------------------------------------------------------
-def check_api_auth():
+def verify_api_authorization(request: Request) -> bool:
     """Verify API authentication if API_SECRET_KEY is configured in .env."""
     if not API_SECRET_KEY:
         return True  # Open local dev mode
     
-    # Check X-API-Key header or Authorization: Bearer <key>
     auth_header = request.headers.get("Authorization", "")
     api_key_header = request.headers.get("X-API-Key", "")
     
@@ -220,67 +191,75 @@ def check_api_auth():
         return True
     return False
 
-def _get_val(payload, *keys, default=None):
-    """Helper function to extract fields flexibly regardless of casing/naming."""
-    if not isinstance(payload, dict):
-        return default
-    # Direct lookup
-    for k in keys:
-        if k in payload and payload[k] not in (None, "", "null", "<null>"):
-            return payload[k]
-    # Case-insensitive / normalized lookup
-    norm_map = {str(k).lower().replace("_", "").replace("-", "").replace(" ", ""): v for k, v in payload.items()}
-    for k in keys:
-        norm_k = k.lower().replace("_", "").replace("-", "").replace(" ", "")
-        if norm_k in norm_map and norm_map[norm_k] not in (None, "", "null", "<null>"):
-            return norm_map[norm_k]
-    return default
+# -------------------------------------------------------------
+# Pydantic Schemas for Request Validation
+# -------------------------------------------------------------
+class FraudTicketCreateSchema(BaseModel):
+    full_name: Optional[str] = Field(None, description="Full Name of the Customer", examples=["Rajesh Sharma"])
+    customer_name: Optional[str] = Field(None, description="Alias for full_name", examples=["Rajesh Sharma"])
+    email: Optional[str] = Field(None, description="Customer Email Address", examples=["rajesh@example.com"])
+    phone: Optional[str] = Field(None, description="Customer Contact Number", examples=["+91 98201 44521"])
+    account_number: Optional[str] = Field(None, description="Bank Account Number", examples=["ACT-10029"])
+    account_no: Optional[str] = Field(None, description="Alias for account_number", examples=["ACT-10029"])
+    account_type: Optional[str] = Field("SAVINGS", description="Account Type (SAVINGS, CHECKING, etc.)", examples=["SAVINGS"])
+    amount_involved: Optional[Union[float, int, str]] = Field(25000.0, description="Fraud Amount Involved in INR", examples=[45000.00])
+    amount: Optional[Union[float, int, str]] = Field(None, description="Alias for amount_involved")
+    incident_type: Optional[str] = Field("Fake QR Code Scam", description="Categorization of the fraud incident", examples=["UPI Impersonation Fraud"])
+    reported_channel: Optional[str] = Field("Customer Help Desk", description="Source/Intake Channel (e.g. RPA_AUTOMATIONEDGE, Mobile App, Web Portal)", examples=["RPA_AUTOMATIONEDGE"])
+    severity: Optional[str] = Field("HIGH", description="Severity (LOW, MEDIUM, HIGH, CRITICAL)", examples=["HIGH"])
+    description: Optional[str] = Field("Customer reported suspicious transaction.", description="Incident narrative and details")
+    suspect_entity: Optional[str] = Field("Unknown Merchant UPI", description="Suspect recipient or beneficiary")
+    flagged_ip_or_location: Optional[str] = Field("Web Client Terminal", description="Originating IP address or geographical location")
 
-def parse_incoming_payload():
-    """Parse JSON or Form or Query params safely from request."""
-    payload = {}
-    if request.is_json:
-        try:
-            payload = request.get_json(silent=True) or {}
-        except Exception:
-            payload = {}
-    elif request.form:
-        payload = request.form.to_dict()
-    else:
-        # Check raw data
-        raw = request.get_data(as_text=True)
-        if raw and raw.strip() and raw.strip() != "[object Object]":
-            try:
-                parsed = json.loads(raw)
-                if isinstance(parsed, dict):
-                    payload = parsed
-            except Exception:
-                pass
-    # Merge query params if payload missing keys
-    if request.args:
-        for k, v in request.args.items():
-            if k not in payload or not payload[k]:
-                payload[k] = v
-    return payload
+    model_config = {
+        "extra": "allow"
+    }
+
+class FraudTicketUpdateSchema(BaseModel):
+    status: Optional[str] = Field(None, description="New ticket status (UNDER_INVESTIGATION, FROZEN, RESOLVED, CLOSED, REJECTED, ESCALATED)", examples=["RESOLVED"])
+    assigned_investigator: Optional[str] = Field(None, description="Staff investigator assigned to handle the complaint", examples=["Shreya Deshmukh (Support Lead)"])
+    action_taken: Optional[str] = Field("", description="Resolution note or investigation comments", examples=["Card cancelled and funds blocked."])
+
+class BulkTicketUpdateSchema(BaseModel):
+    ticket_ids: List[Union[int, str]] = Field(..., description="List of ticket IDs or ticket numbers to update", examples=[[101, 102, 103]])
+    status: Optional[str] = Field(None, description="New status to set across selected tickets", examples=["RESOLVED"])
+    assigned_investigator: Optional[str] = Field(None, description="Staff member to assign across selected tickets", examples=["Rajesh Nair (Fraud Forensics)"])
+    action_taken: Optional[str] = Field("", description="Optional action note for the audit log")
+
+class FreezeAccountSchema(BaseModel):
+    account_number: str = Field(..., description="Target bank account number to lock", examples=["ACT-10029"])
+    ticket_number: Optional[str] = Field(None, description="Optional linked fraud ticket number", examples=["FRD-2026-A1B2C3D4"])
+
+class SqlExecuteSchema(BaseModel):
+    query: str = Field(..., description="SQL Query string to execute against PostgreSQL", examples=["SELECT * FROM fraud_tickets LIMIT 5;"])
 
 # -------------------------------------------------------------
 # Static Frontend Routes
 # -------------------------------------------------------------
-@app.route('/')
-def serve_index():
-    return send_from_directory(".", "index.html")
+@app.get("/", include_in_schema=False)
+async def serve_index():
+    if os.path.exists("index.html"):
+        return FileResponse("index.html", media_type="text/html")
+    return HTMLResponse("<h2>Dummy Bank Portal is Running</h2>", status_code=200)
 
-@app.route('/styles.css')
-def serve_css():
-    return send_from_directory(".", "styles.css")
+@app.get("/styles.css", include_in_schema=False)
+async def serve_css():
+    if os.path.exists("styles.css"):
+        return FileResponse("styles.css", media_type="text/css")
+    raise HTTPException(status_code=404, detail="styles.css not found")
 
-@app.route('/app.js')
-def serve_js():
-    return send_from_directory(".", "app.js")
+@app.get("/app.js", include_in_schema=False)
+async def serve_js():
+    if os.path.exists("app.js"):
+        return FileResponse("app.js", media_type="application/javascript")
+    raise HTTPException(status_code=404, detail="app.js not found")
 
-@app.route('/health')
-def health_check():
-    """Enterprise Health Check with Live PostgreSQL Ping & Pool Latency."""
+# -------------------------------------------------------------
+# Health & Observability Endpoints
+# -------------------------------------------------------------
+@app.get("/health", tags=["System Observability"])
+def health_check(request: Request):
+    """Enterprise Health Check with Live PostgreSQL Ping & Connection Pool Diagnostics."""
     t0 = time.time()
     db_ok = False
     db_latency_ms = 0.0
@@ -294,12 +273,12 @@ def health_check():
         db_ok = True
         db_latency_ms = round((time.time() - t0) * 1000.0, 2)
     except Exception as e:
-        logger.error(f"Health check DB ping failed: {e}", extra={"request_id": getattr(g, "request_id", "HEALTH")})
+        logger.error(f"Health check DB ping failed: {e}")
 
-    return jsonify({
+    return {
         "status": "UP" if db_ok else "DEGRADED",
         "environment": APP_ENV,
-        "server": "Waitress (Production WSGI)",
+        "server": "FastAPI + Uvicorn (Production ASGI)",
         "worker_threads": SERVER_THREADS,
         "database": {
             "status": "CONNECTED" if db_ok else "DISCONNECTED",
@@ -314,13 +293,13 @@ def health_check():
         },
         "uptime_seconds": round(time.time() - START_TIME, 1),
         "timestamp": datetime.now(timezone.utc).isoformat()
-    })
+    }
 
-@app.route('/api/metrics')
+@app.get("/api/metrics", tags=["System Observability"])
 def api_metrics():
-    """Observability & Telemetry Endpoint for System Monitoring."""
+    """Observability & Telemetry Endpoint for Monitoring Dashboards."""
     uptime = time.time() - START_TIME
-    return jsonify({
+    return {
         "uptime_seconds": round(uptime, 2),
         "total_requests": METRICS["total_requests"],
         "total_errors": METRICS["total_errors"],
@@ -330,16 +309,18 @@ def api_metrics():
         "status_codes": METRICS["status_codes"],
         "server": {
             "threads": SERVER_THREADS,
-            "max_connections": SERVER_CONNECTION_LIMIT
+            "max_connections": SERVER_CONNECTION_LIMIT,
+            "framework": "FastAPI / Uvicorn"
         },
         "timestamp": datetime.now(timezone.utc).isoformat()
-    })
+    }
 
 # -------------------------------------------------------------
 # REST API Endpoints
 # -------------------------------------------------------------
-@app.route('/api/overview', methods=['GET'])
+@app.get("/api/overview", tags=["Analytics & Overview"])
 def api_overview():
+    """Returns top-level metric counters for the Bank Fraud Operations Dashboard."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -361,14 +342,18 @@ def api_overview():
         cursor.execute("SELECT COUNT(*) FROM fraud_tickets WHERE status = 'RESOLVED';")
         resolved_cases = cursor.fetchone()[0]
 
+        cursor.execute("SELECT COUNT(*) FROM fraud_tickets WHERE status NOT IN ('RESOLVED', 'CLOSED', 'REJECTED');")
+        active_tickets = cursor.fetchone()[0]
+
         cursor.execute("SELECT COUNT(*) FROM customers WHERE risk_tier = 'CRITICAL';")
         critical_customers = cursor.fetchone()[0]
 
         cursor.execute("SELECT COUNT(*) FROM customers;")
         total_customers = cursor.fetchone()[0]
 
-        return jsonify({
+        return clean_db_record({
             "total_tickets": total_tickets,
+            "active_tickets": active_tickets,
             "total_amount": float(total_amount),
             "recovered_amount": float(recovered_amount),
             "under_investigation": under_investigation,
@@ -381,8 +366,9 @@ def api_overview():
         cursor.close()
         conn.close()
 
-@app.route('/api/fraud-tickets', methods=['GET'])
+@app.get("/api/fraud-tickets", tags=["Fraud Operations"])
 def api_get_fraud_tickets():
+    """List all recorded fraud incidents sorted by most recent."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -432,13 +418,60 @@ def api_get_fraud_tickets():
                 "action_taken": r[23],
                 "created_at": r[24]
             })
-        return jsonify(tickets)
+        return clean_db_record(tickets)
     finally:
         cursor.close()
         conn.close()
 
-@app.route('/api/fraud-tickets/<ticket_id>', methods=['GET'])
-def api_get_single_ticket(ticket_id):
+@app.post("/api/fraud-tickets/bulk-update", tags=["Fraud Operations"])
+def api_bulk_update_tickets(payload: BulkTicketUpdateSchema, request: Request):
+    """Batch update multiple fraud tickets and linked customer accounts in a single transaction."""
+    ticket_ids = payload.ticket_ids
+    if not ticket_ids:
+        raise HTTPException(status_code=400, detail="No ticket IDs provided for bulk update.")
+
+    status_val = payload.status
+    if status_val and status_val not in ["UNDER_INVESTIGATION", "FROZEN", "RESOLVED", "CLOSED", "REJECTED", "ESCALATED"]:
+        raise HTTPException(status_code=400, detail=f"Invalid status: '{status_val}'")
+
+    action_note = payload.action_taken or f"Bulk staff action applied ({status_val})"
+    client_ip = request.client.host if request.client else "127.0.0.1"
+
+    conn = get_db_connection()
+    conn.autocommit = True
+    cursor = conn.cursor()
+    updated_count = 0
+    try:
+        for tid in ticket_ids:
+            cursor.execute("""
+                UPDATE fraud_tickets
+                SET status = COALESCE(%s, status),
+                    action_taken = CASE WHEN %s != '' THEN %s ELSE action_taken END,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE ticket_id = %s OR ticket_number = %s
+                RETURNING ticket_number, customer_id;
+            """, (status_val, action_note, action_note, int(tid) if str(tid).isdigit() else -1, str(tid)))
+            res = cursor.fetchone()
+            if res:
+                t_num, c_id = res
+                updated_count += 1
+                if status_val == "FROZEN":
+                    cursor.execute("UPDATE customer_accounts SET status = 'FROZEN' WHERE customer_id = %s;", (c_id,))
+                
+                cursor.execute("""
+                    INSERT INTO audit_logs (ticket_number, actor, action, details, ip_address)
+                    VALUES (%s, %s, %s, %s, %s);
+                """, (t_num, "SOC Lead Investigator (Bulk Action)", f"BULK_STATUS_{status_val}", f"Bulk updated status to {status_val}. Note: {action_note}", client_ip))
+
+        conn.commit()
+        return {"success": True, "updated_count": updated_count, "status": status_val}
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.get("/api/fraud-tickets/{ticket_id}", tags=["Fraud Operations"])
+def api_get_single_ticket(ticket_id: str):
+    """Retrieve full forensic details, linked transactions, and audit logs for a single ticket."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -459,7 +492,7 @@ def api_get_single_ticket(ticket_id):
         r = cursor.fetchone()
 
         if not r:
-            return jsonify({"error": "Ticket not found"}), 404
+            raise HTTPException(status_code=404, detail="Ticket not found")
 
         ticket = {
             "ticket_id": r[0],
@@ -524,57 +557,95 @@ def api_get_single_ticket(ticket_id):
             })
         ticket["audit_logs"] = logs
 
-        return jsonify(ticket)
+        return clean_db_record(ticket)
     finally:
         cursor.close()
         conn.close()
 
-@app.route('/api/fraud-tickets', methods=['POST'])
-def api_create_fraud_ticket():
-    # Verify API authorization if configured
-    if not check_api_auth():
-        return jsonify({"error": "Unauthorized", "message": "Invalid or missing API key."}), 401
+@app.post("/api/fraud-tickets", status_code=201, tags=["Fraud Operations"])
+async def api_create_fraud_ticket(request: Request):
+    """
+    Intake endpoint for logging new fraud cases into PostgreSQL.
+    Accepts JSON body or Form parameters from AutomationEdge RPA bots, Mobile App, or Web Intake.
+    """
+    if not verify_api_authorization(request):
+        raise HTTPException(status_code=401, detail="Valid API Key or Bearer token is required.")
 
-    raw_body = request.get_data(as_text=True)
-    payload = parse_incoming_payload()
+    # Handle raw content parsing for flexible RPA payloads
+    raw_body = await request.body()
+    raw_text = raw_body.decode("utf-8", errors="ignore")
+    
+    payload: Dict[str, Any] = {}
+    content_type = request.headers.get("content-type", "").lower()
+    
+    if "application/json" in content_type or (raw_text.strip().startswith("{") and raw_text.strip().endswith("}")):
+        try:
+            payload = json.loads(raw_text)
+        except Exception:
+            payload = {}
+    elif "application/x-www-form-urlencoded" in content_type or "multipart/form-data" in content_type:
+        form_data = await request.form()
+        payload = dict(form_data)
 
-    if (not payload or len(payload) == 0) and "[object Object]" in raw_body:
-        return jsonify({
-            "success": False,
-            "error": "Received '[object Object]' as request body. In Process Studio, please use 'JSON.stringify(data)' to format your body field as a valid JSON string before sending."
-        }), 400
+    if not payload and "[object Object]" in raw_text:
+        raise HTTPException(
+            status_code=400,
+            detail="Received '[object Object]' as request body. In Process Studio, please use 'JSON.stringify(data)' to format your body field as a valid JSON string before sending."
+        )
+
+    # Helper function to extract fields flexibly regardless of casing/naming
+    def _get_val(*keys, default=None):
+        if not isinstance(payload, dict):
+            return default
+        for k in keys:
+            if k in payload and payload[k] not in (None, "", "null", "<null>"):
+                return payload[k]
+        norm_map = {str(k).lower().replace("_", "").replace("-", "").replace(" ", ""): v for k, v in payload.items()}
+        for k in keys:
+            norm_k = k.lower().replace("_", "").replace("-", "").replace(" ", "")
+            if norm_k in norm_map and norm_map[norm_k] not in (None, "", "null", "<null>"):
+                return norm_map[norm_k]
+        return default
 
     # Field extraction & input validation
-    cust_name = str(_get_val(payload, "full_name", "customer_name", "fullname", "name", "cust_name", default="Ramesh Kumar")).strip()
+    cust_name = str(_get_val("full_name", "customer_name", "fullname", "name", "cust_name", default="Ramesh Kumar")).strip()
     if not cust_name:
-        return jsonify({"success": False, "error": "Customer full_name cannot be blank."}), 400
+        raise HTTPException(status_code=400, detail="Customer full_name cannot be blank.")
 
-    email = str(_get_val(payload, "email", "mail", default=f"{cust_name.lower().replace(' ', '')}_{datetime.now().strftime('%M%S')}@example.com")).strip()
-    phone = str(_get_val(payload, "phone", "mobile", "contact", default="+91 98765 00000")).strip()
-    
-    severity = str(_get_val(payload, "severity", "risk_tier", "priority", default="HIGH")).upper().strip()
-    if severity not in ["LOW", "MEDIUM", "HIGH", "CRITICAL"]:
-        severity = "HIGH"
-    risk_tier = severity
-    
+    email = str(_get_val("email", "mail", default=f"{cust_name.lower().replace(' ', '')}_{datetime.now().strftime('%M%S')}@example.com")).strip()
+    phone = str(_get_val("phone", "mobile", "contact", default="+91 98765 00000")).strip()
     cust_code = f"CUST-{uuid.uuid4().hex[:6].upper()}"
-    acc_num = str(_get_val(payload, "account_number", "account_no", "accountnumber", "acc_num", default=f"ACT-{uuid.uuid4().hex[:6].upper()}")).strip()
-    acc_type = str(_get_val(payload, "account_type", "accounttype", default="SAVINGS")).upper().strip()
-    
-    raw_amount = _get_val(payload, "amount_involved", "amount", "amountinvolved", default="25000")
+    acc_num = str(_get_val("account_number", "account_no", "accountnumber", "acc_num", default=f"ACT-{uuid.uuid4().hex[:6].upper()}")).strip()
+    acc_type = str(_get_val("account_type", "accounttype", default="SAVINGS")).upper().strip()
+
+    raw_amount = _get_val("amount_involved", "amount", "amountinvolved", default="25000")
     try:
         amount = float(str(raw_amount).replace(",", "").replace("₹", "").strip())
         if amount <= 0:
-            return jsonify({"success": False, "error": "amount_involved must be greater than zero."}), 400
+            raise HTTPException(status_code=400, detail="amount_involved must be greater than zero.")
     except ValueError:
-        return jsonify({"success": False, "error": f"Invalid numerical amount_involved: '{raw_amount}'"}), 400
+        raise HTTPException(status_code=400, detail=f"Invalid numerical amount_involved: '{raw_amount}'")
 
-    incident_type = str(_get_val(payload, "incident_type", "incidenttype", "fraud_type", default="Fake QR Code Scam")).strip()
-    channel = str(_get_val(payload, "reported_channel", "channel", default="Customer Help Desk")).strip()
-    desc = str(_get_val(payload, "description", "desc", "details", default="Customer submitted fraud report.")).strip()
-    suspect = str(_get_val(payload, "suspect_entity", "suspect", "merchant", default="Unknown Merchant UPI")).strip()
-    flagged_ip = str(_get_val(payload, "flagged_ip_or_location", "location", "ip_address", default="Web Client Terminal")).strip()
+    # Priority / Severity is automatically preset based on the financial amount involved
+    if amount >= 100000.0:
+        severity = "CRITICAL"
+    elif amount >= 50000.0:
+        severity = "HIGH"
+    elif amount >= 10000.0:
+        severity = "MEDIUM"
+    else:
+        severity = "LOW"
+    risk_tier = severity
+
+    incident_type = str(_get_val("incident_type", "incidenttype", "fraud_type", default="Fake QR Code Scam")).strip()
+    channel = str(_get_val("reported_channel", "channel", default="Customer Help Desk")).strip()
+    desc = str(_get_val("description", "desc", "details", default="Customer submitted fraud report.")).strip()
+    suspect = str(_get_val("suspect_entity", "suspect", "merchant", default="Unknown Merchant UPI")).strip()
+    flagged_ip = str(_get_val("flagged_ip_or_location", "location", "ip_address", default="Web Client Terminal")).strip()
+    staff_assignee = str(_get_val("assigned_investigator", "staff", "assigned_to", default="Shreya Deshmukh (Support Lead)")).strip()
     ticket_num = f"FRD-2026-{uuid.uuid4().hex[:8].upper()}"
+
+    client_ip = request.client.host if request.client else "127.0.0.1"
 
     conn = get_db_connection()
     conn.autocommit = True
@@ -631,9 +702,9 @@ def api_create_fraud_ticket():
         """, (
             ticket_num, cust_id, cust_name, acc_num, incident_type,
             amount, 0.0, datetime.now(), channel,
-            severity, "UNDER_INVESTIGATION", "Shreya Deshmukh (Support Lead)",
+            severity, "UNDER_INVESTIGATION", staff_assignee,
             flagged_ip, suspect,
-            desc, "Complaint logged into PostgreSQL database; Assigned to Support Team."
+            desc, f"Complaint logged into PostgreSQL database; Assigned to {staff_assignee}."
         ))
         new_ticket_id = cursor.fetchone()[0]
 
@@ -641,12 +712,12 @@ def api_create_fraud_ticket():
         cursor.execute("""
             INSERT INTO audit_logs (ticket_number, customer_name, actor, action, details, ip_address)
             VALUES (%s, %s, %s, %s, %s, %s);
-        """, (ticket_num, cust_name, "Process Studio RPA Intake", "NEW_INCIDENT_REGISTERED", f"Created fraud ticket {ticket_num} for {cust_name} ({incident_type} - ₹{amount:,.2f})", request.remote_addr or "127.0.0.1"))
+        """, (ticket_num, cust_name, "Process Studio RPA Intake", "NEW_INCIDENT_REGISTERED", f"Created fraud ticket {ticket_num} for {cust_name} ({incident_type} - ₹{amount:,.2f})", client_ip))
 
         conn.commit()
         METRICS["total_fraud_tickets_created"] += 1
 
-        return jsonify({
+        return {
             "success": True, 
             "ticket_id": new_ticket_id, 
             "ticket_number": ticket_num, 
@@ -654,88 +725,144 @@ def api_create_fraud_ticket():
             "account_number": acc_num,
             "incident_type": incident_type,
             "amount_involved": amount
-        }), 201
+        }
+    except HTTPException:
+        raise
     except Exception as ex:
-        logger.error(f"Error creating fraud ticket: {ex}", exc_info=True, extra={"request_id": getattr(g, "request_id", "SYS")})
-        return jsonify({"success": False, "error": str(ex)}), 500
+        logger.error(f"Error creating fraud ticket: {ex}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(ex))
     finally:
         cursor.close()
         conn.close()
 
-@app.route('/api/fraud-tickets/<ticket_id>', methods=['PATCH'])
-def api_update_ticket(ticket_id):
-    payload = parse_incoming_payload()
+@app.patch("/api/fraud-tickets/{ticket_id}", tags=["Fraud Operations"])
+def api_update_ticket(ticket_id: str, payload: FraudTicketUpdateSchema, request: Request):
+    """Update ticket status, assigned investigator, and resolution notes."""
     conn = get_db_connection()
     conn.autocommit = True
     cursor = conn.cursor()
     try:
-        status = payload.get("status")
-        if status and status not in ["UNDER_INVESTIGATION", "FROZEN", "RESOLVED", "CLOSED", "REJECTED"]:
-            return jsonify({"error": f"Invalid status: '{status}'"}), 400
+        status_val = payload.status
+        if status_val and status_val not in ["UNDER_INVESTIGATION", "FROZEN", "RESOLVED", "CLOSED", "REJECTED", "ESCALATED"]:
+            raise HTTPException(status_code=400, detail=f"Invalid status: '{status_val}'")
 
-        action_note = payload.get("action_taken", "")
+        assigned_val = payload.assigned_investigator
+        action_note = payload.action_taken or ""
 
         cursor.execute("""
             UPDATE fraud_tickets
             SET status = COALESCE(%s, status),
+                assigned_investigator = COALESCE(%s, assigned_investigator),
                 action_taken = CASE WHEN %s != '' THEN %s ELSE action_taken END,
                 updated_at = CURRENT_TIMESTAMP
             WHERE ticket_id = %s OR ticket_number = %s
-            RETURNING ticket_number, customer_id, account_number;
-        """, (status, action_note, action_note, int(ticket_id) if ticket_id.isdigit() else -1, ticket_id))
+            RETURNING ticket_number, customer_id, account_number, assigned_investigator;
+        """, (status_val, assigned_val, action_note, action_note, int(ticket_id) if ticket_id.isdigit() else -1, ticket_id))
         res = cursor.fetchone()
 
         if not res:
-            return jsonify({"error": "Ticket not found"}), 404
+            raise HTTPException(status_code=404, detail="Ticket not found")
 
-        ticket_num, cust_id, acc_num = res
+        ticket_num, cust_id, acc_num, new_assigned = res
 
         # If status was updated to FROZEN, freeze the account too
-        if status == "FROZEN":
+        if status_val == "FROZEN":
             cursor.execute("UPDATE customer_accounts SET status = 'FROZEN' WHERE customer_id = %s;", (cust_id,))
 
+        client_ip = request.client.host if request.client else "127.0.0.1"
+
         # Audit log
+        log_action = f"STATUS_{status_val}" if status_val else "ASSIGNED_STAFF_UPDATE"
+        log_detail = f"Updated by Officer. Status: {status_val or 'Unchanged'}, Assigned: {new_assigned}. Note: {action_note}"
         cursor.execute("""
             INSERT INTO audit_logs (ticket_number, actor, action, details, ip_address)
             VALUES (%s, %s, %s, %s, %s);
-        """, (ticket_num, "SOC Lead Investigator", f"STATUS_{status}", f"Updated status to {status}. Note: {action_note}", request.remote_addr or "127.0.0.1"))
+        """, (ticket_num, "SOC Lead Investigator", log_action, log_detail, client_ip))
 
         conn.commit()
-        return jsonify({"success": True, "ticket_number": ticket_num, "status": status})
+        return {"success": True, "ticket_number": ticket_num, "status": status_val, "assigned_investigator": new_assigned}
     finally:
         cursor.close()
         conn.close()
 
-@app.route('/api/freeze-account', methods=['POST'])
-def api_freeze_account():
-    payload = parse_incoming_payload()
+@app.post("/api/fraud-tickets/bulk-update", tags=["Fraud Operations"])
+def api_bulk_update_tickets(payload: BulkTicketUpdateSchema, request: Request):
+    """Bulk update status or assigned staff across multiple selected tickets."""
+    if not payload.ticket_ids:
+        raise HTTPException(status_code=400, detail="No ticket IDs provided")
+
     conn = get_db_connection()
     conn.autocommit = True
     cursor = conn.cursor()
     try:
-        acc_num = payload.get("account_number")
-        ticket_num = payload.get("ticket_number")
+        status_val = payload.status
+        assigned_val = payload.assigned_investigator
+        action_note = payload.action_taken or "Bulk action applied"
 
-        if not acc_num:
-            return jsonify({"error": "account_number is required"}), 400
+        int_ids = [int(i) for i in payload.ticket_ids if str(i).isdigit()]
+        str_ids = [str(i) for i in payload.ticket_ids if not str(i).isdigit()]
+
+        cursor.execute("""
+            UPDATE fraud_tickets
+            SET status = COALESCE(%s, status),
+                assigned_investigator = COALESCE(%s, assigned_investigator),
+                action_taken = CASE WHEN %s != '' THEN %s ELSE action_taken END,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE ticket_id = ANY(%s) OR ticket_number = ANY(%s)
+            RETURNING ticket_number, customer_id;
+        """, (status_val, assigned_val, action_note, action_note, int_ids or [-1], str_ids or ['__NONE__']))
+        
+        rows = cursor.fetchall()
+        updated_count = len(rows)
+
+        if status_val == "FROZEN":
+            cust_ids = [r[1] for r in rows if r[1]]
+            if cust_ids:
+                cursor.execute("UPDATE customer_accounts SET status = 'FROZEN' WHERE customer_id = ANY(%s);", (cust_ids,))
+
+        client_ip = request.client.host if request.client else "127.0.0.1"
+        for r in rows:
+            t_num = r[0]
+            cursor.execute("""
+                INSERT INTO audit_logs (ticket_number, actor, action, details, ip_address)
+                VALUES (%s, %s, %s, %s, %s);
+            """, (t_num, "SOC Staff Supervisor", f"BULK_UPDATE_{status_val or 'STAFF_ASSIGN'}", action_note, client_ip))
+
+        conn.commit()
+        return {"success": True, "updated_count": updated_count}
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.post("/api/freeze-account", tags=["Account Actions"])
+def api_freeze_account(payload: FreezeAccountSchema, request: Request):
+    """Emergency lock an account and linked fraud case."""
+    conn = get_db_connection()
+    conn.autocommit = True
+    cursor = conn.cursor()
+    try:
+        acc_num = payload.account_number
+        ticket_num = payload.ticket_number
 
         cursor.execute("UPDATE customer_accounts SET status = 'FROZEN' WHERE account_number = %s;", (acc_num,))
         if ticket_num:
             cursor.execute("UPDATE fraud_tickets SET status = 'FROZEN' WHERE ticket_number = %s;", (ticket_num,))
 
+        client_ip = request.client.host if request.client else "127.0.0.1"
         cursor.execute("""
             INSERT INTO audit_logs (ticket_number, actor, action, details, ip_address)
             VALUES (%s, %s, %s, %s, %s);
-        """, (ticket_num or "MANUAL_LOCK", "SOC Security Officer", "ACCOUNT_EMERGENCY_FREEZE", f"Account {acc_num} frozen due to fraud risk", request.remote_addr or "127.0.0.1"))
+        """, (ticket_num or "MANUAL_LOCK", "SOC Security Officer", "ACCOUNT_EMERGENCY_FREEZE", f"Account {acc_num} frozen due to fraud risk", client_ip))
 
         conn.commit()
-        return jsonify({"success": True, "account_number": acc_num, "status": "FROZEN"})
+        return {"success": True, "account_number": acc_num, "status": "FROZEN"}
     finally:
         cursor.close()
         conn.close()
 
-@app.route('/api/customers', methods=['GET'])
+@app.get("/api/customers", tags=["Banking Core"])
 def api_get_customers():
+    """List customer profiles, account balances, and aggregate fraud report counts."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -762,13 +889,14 @@ def api_get_customers():
                 "account_status": r[11] or 'ACTIVE', "branch": r[12],
                 "fraud_reports_count": r[13]
             })
-        return jsonify(customers)
+        return clean_db_record(customers)
     finally:
         cursor.close()
         conn.close()
 
-@app.route('/api/transactions', methods=['GET'])
+@app.get("/api/transactions", tags=["Banking Core"])
 def api_get_transactions():
+    """Retrieve forensic ledger of transactions with fraud risk scores and flags."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -791,13 +919,14 @@ def api_get_transactions():
                 "is_fraud_flagged": r[10], "fraud_risk_score": r[11], "status": r[12],
                 "txn_time": r[13]
             })
-        return jsonify(txns)
+        return clean_db_record(txns)
     finally:
         cursor.close()
         conn.close()
 
-@app.route('/api/analytics', methods=['GET'])
+@app.get("/api/analytics", tags=["Analytics & Overview"])
 def api_get_analytics():
+    """Get multidimensional aggregated metrics by channel, incident type, and severity."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -831,7 +960,7 @@ def api_get_analytics():
         """)
         by_status = {r[0]: r[1] for r in cursor.fetchall()}
 
-        return jsonify({
+        return clean_db_record({
             "by_type": by_type,
             "by_channel": by_channel,
             "by_severity": by_severity,
@@ -841,8 +970,9 @@ def api_get_analytics():
         cursor.close()
         conn.close()
 
-@app.route('/api/audit-logs', methods=['GET'])
+@app.get("/api/audit-logs", tags=["Auditing & Forensics"])
 def api_get_audit_logs():
+    """Retrieve immutable audit log history (recent 100 entries)."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -858,13 +988,14 @@ def api_get_audit_logs():
                 "log_id": r[0], "ticket_number": r[1], "actor": r[2], "action": r[3],
                 "details": r[4], "ip_address": r[5], "created_at": r[6]
             })
-        return jsonify(logs)
+        return clean_db_record(logs)
     finally:
         cursor.close()
         conn.close()
 
-@app.route('/api/db-status', methods=['GET'])
+@app.get("/api/db-status", tags=["Database Management"])
 def api_get_db_status():
+    """Direct PostgreSQL schema inspection endpoint (visible in pgAdmin 4)."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -884,7 +1015,7 @@ def api_get_db_status():
             cursor.execute(f"SELECT COUNT(*) FROM {tbl};")
             table_counts[tbl] = cursor.fetchone()[0]
 
-        return jsonify({
+        return clean_db_record({
             "connected": True,
             "database": DB_NAME,
             "host": DB_HOST,
@@ -899,21 +1030,21 @@ def api_get_db_status():
         cursor.close()
         conn.close()
 
-@app.route('/api/execute-sql', methods=['POST'])
-def api_execute_sql():
+@app.post("/api/execute-sql", tags=["Database Management"])
+def api_execute_sql(payload: SqlExecuteSchema, request: Request):
+    """Direct SQL Execution Console for Administrator Queries."""
     if not ENABLE_SQL_CONSOLE:
-        return jsonify({"error": "SQL Console is disabled in this environment."}), 403
+        raise HTTPException(status_code=403, detail="SQL Console is disabled in this environment.")
 
-    payload = parse_incoming_payload()
-    query = payload.get("query", "").strip()
+    query = payload.query.strip()
     if not query:
-        return jsonify({"error": "Empty SQL query"}), 400
+        raise HTTPException(status_code=400, detail="Empty SQL query")
 
     # In production mode, guard against accidental DROP / TRUNCATE unless authorized
-    if APP_ENV == "production" and not check_api_auth():
+    if APP_ENV == "production" and not verify_api_authorization(request):
         upper_q = query.upper()
         if any(keyword in upper_q for keyword in ["DROP DATABASE", "DROP TABLE", "TRUNCATE"]):
-            return jsonify({"error": "Destructive DDL statements are blocked in production mode."}), 403
+            raise HTTPException(status_code=403, detail="Destructive DDL statements are blocked in production mode.")
 
     conn = get_db_connection()
     conn.autocommit = True
@@ -926,20 +1057,20 @@ def api_execute_sql():
             formatted_rows = []
             for row in rows:
                 formatted_rows.append([float(c) if isinstance(c, Decimal) else (c.isoformat() if isinstance(c, (datetime, date)) else c) for c in row])
-            return jsonify({
+            return clean_db_record({
                 "success": True,
                 "columns": columns,
                 "rows": formatted_rows,
                 "row_count": len(rows)
             })
         else:
-            return jsonify({
+            return {
                 "success": True,
                 "message": "Query executed successfully. (No returning rows)",
                 "row_count": cursor.rowcount
-            })
+            }
     except Exception as e:
-        return jsonify({"error": str(e)}), 400
+        raise HTTPException(status_code=400, detail=str(e))
     finally:
         cursor.close()
         conn.close()
@@ -950,22 +1081,21 @@ def api_execute_sql():
 def run_production_server():
     print("=" * 75)
     print("  DUMMY BANK PORTAL - ENTERPRISE FRAUD SYSTEM")
-    print("  Production WSGI Server: Waitress")
+    print("  Production ASGI Server: FastAPI + Uvicorn")
     print(f"  Environment: {APP_ENV.upper()}")
     print(f"  Host: http://{PORTAL_HOST}:{PORTAL_PORT}")
-    print(f"  Worker Threads: {SERVER_THREADS} Concurrent Workers")
-    print(f"  Connection Limit: {SERVER_CONNECTION_LIMIT} Sockets")
+    print(f"  Swagger UI Docs: http://{PORTAL_HOST}:{PORTAL_PORT}/docs")
+    print(f"  ReDoc Docs:      http://{PORTAL_HOST}:{PORTAL_PORT}/redoc")
     print(f"  Database: PostgreSQL ({DB_NAME}) on port {DB_PORT}")
     print("=" * 75)
     
-    waitress.serve(
-        app,
+    uvicorn.run(
+        "server:app",
         host=PORTAL_HOST,
         port=PORTAL_PORT,
-        threads=SERVER_THREADS,
-        connection_limit=SERVER_CONNECTION_LIMIT,
-        channel_timeout=30,
-        ident="DummyBankPortal-WSGI/1.0"
+        log_level=LOG_LEVEL.lower(),
+        access_log=True,
+        workers=1
     )
 
 if __name__ == "__main__":

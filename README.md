@@ -20,11 +20,11 @@ flowchart TD
         B3["Advanced REST Client (POST /api/fraud-tickets)"]
     end
 
-    subgraph BACKEND["Production WSGI Server (Waitress / Flask)"]
+    subgraph BACKEND["Production ASGI Server (FastAPI + Uvicorn)"]
         C1["Request Tracing (X-Request-ID) & Latency Middleware"]
-        C2["Centralized JSON Error & Validation Layer"]
+        C2["Pydantic Data Validation & OpenAPI Generator"]
         C3["Thread-Safe PostgreSQL Warm Connection Pool (DBUtils)"]
-        C4["API Endpoints (/api/overview, /api/fraud-tickets, /api/metrics)"]
+        C4["API Endpoints & Interactive Docs (/docs, /redoc)"]
     end
 
     subgraph DB["PostgreSQL 16 Database (bank_fraud_portal)"]
@@ -37,7 +37,8 @@ flowchart TD
 
     subgraph CLIENTS["Investigation & Operations"]
         E1["Operations Portal UI (http://localhost:5050)"]
-        E2["pgAdmin 4 Database Client (Port 5432)"]
+        E2["Swagger UI Interactive Docs (http://localhost:5050/docs)"]
+        E3["pgAdmin 4 Database Client (Port 5432)"]
     end
 
     INTAKE --> RPA
@@ -50,7 +51,9 @@ flowchart TD
 
 ## 2. Production Features
 
-- **Production WSGI Engine**: Powered by **Waitress** with 16 multi-threaded workers supporting 200+ concurrent socket connections.
+- **Production ASGI Engine**: Powered by **FastAPI + Uvicorn** delivering high-concurrency asynchronous I/O and low latency.
+- **Interactive Swagger Documentation**: Built-in Swagger UI at **`/docs`** and ReDoc at **`/redoc`** for instant RPA payload inspection and testing.
+- **Pydantic Validation**: Strict and resilient schema validation for incoming incident reports with automatic error formatting.
 - **Connection Pooling**: Pre-warmed **DBUtils.PooledDB** managing PostgreSQL sockets with sub-millisecond query latency and automatic reconnection retries.
 - **Distributed Request Tracing**: Every HTTP request receives and propagates an immutable `X-Request-ID` UUID for end-to-end audit tracing.
 - **Observability & Metrics**: Dedicated `/api/metrics` and `/health` endpoints providing uptime, request volume, error rates, and pool latency.
@@ -61,7 +64,7 @@ flowchart TD
 
 ## 3. Technology Stack
 
-- **Backend**: Python 3.10+, Flask 3.x, Waitress Production WSGI
+- **Backend**: Python 3.10+, FastAPI, Uvicorn ASGI Server, Pydantic
 - **Database**: PostgreSQL 16 (`bank_fraud_portal`), `pg8000` driver, `DBUtils` connection pooling
 - **Frontend**: Vanilla HTML5, CSS3 Custom Properties Design System, Modern JavaScript (ES6+)
 - **RPA Integration**: AutomationEdge Process Studio (Modified Java Script Value + Advanced REST Client)
@@ -104,9 +107,11 @@ flowchart TD
    ```bash
    python server.py
    ```
-   - Access the Web Portal at: `http://127.0.0.1:5050`
-   - Access Health Check at: `http://127.0.0.1:5050/health`
-   - Access System Metrics at: `http://127.0.0.1:5050/api/metrics`
+   - Access the Web Portal: `http://127.0.0.1:5050`
+   - Access **Interactive Swagger UI**: `http://127.0.0.1:5050/docs`
+   - Access **ReDoc**: `http://127.0.0.1:5050/redoc`
+   - Access Health Check: `http://127.0.0.1:5050/health`
+   - Access System Metrics: `http://127.0.0.1:5050/api/metrics`
 
 ---
 
@@ -114,6 +119,8 @@ flowchart TD
 
 | Endpoint | Method | Description |
 | :--- | :---: | :--- |
+| `/docs` | `GET` | Interactive Swagger UI documentation and API client |
+| `/redoc` | `GET` | ReDoc API documentation |
 | `/health` | `GET` | System health check and database ping latency |
 | `/api/metrics` | `GET` | Observability metrics (requests, errors, uptime) |
 | `/api/overview` | `GET` | Dashboard KPI summary statistics |
@@ -125,6 +132,8 @@ flowchart TD
 | `/api/customers` | `GET` | Customer master directory with risk tiers |
 | `/api/transactions` | `GET` | Transaction ledger with fraud risk scores |
 | `/api/audit-logs` | `GET` | Immutable security and staff activity logs |
+| `/api/db-status` | `GET` | PostgreSQL schema and table counts for pgAdmin sync |
+| `/api/execute-sql` | `POST` | SQL execution console for database administration |
 
 ---
 
@@ -153,7 +162,7 @@ Expected response: `201 Created`.
 
 ## 7. Performance & Concurrency Testing
 
-Run the multi-threaded concurrency validation test (50 concurrent client threads across 100 requests):
+Run the multi-threaded concurrency validation test:
 
 ```bash
 python test_concurrency.py

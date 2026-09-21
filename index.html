@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=4.5">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body class="bank-portal-theme">
@@ -36,10 +36,12 @@
         <i class="fa-regular fa-clock"></i>
         <span id="clockValue">--:--:--</span>
       </div>
+
       <button class="btn btn-primary" id="btnOpenNewTicketModal">
         <i class="fa-solid fa-plus-circle"></i>
         <span>Report New Fraud</span>
       </button>
+
       <div class="user-profile-badge">
         <div class="avatar-circle">SD</div>
         <div class="user-meta">
@@ -47,41 +49,38 @@
           <span class="user-role">Senior Branch Officer</span>
         </div>
       </div>
+
+      <!-- Notification Bell at Far Top-Right -->
+      <div class="header-notif-wrapper" id="notifWrapper">
+        <button class="header-bell-btn" id="btnNotificationBell" title="Live Fraud Notifications" aria-label="Notifications">
+          <i class="fa-solid fa-bell" id="bellIcon"></i>
+          <span class="bell-badge" id="bellBadge">0</span>
+        </button>
+        <!-- Notification Dropdown Menu -->
+        <div class="notif-dropdown" id="notifDropdown" style="display: none;">
+          <div class="notif-header">
+            <div class="notif-header-title">
+              <i class="fa-solid fa-bell" style="color: var(--primary);"></i>
+              <span>Fraud Alert Inbox</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <button class="notif-clear-btn" id="btnClearNotifs" title="Mark all alerts as read"><i class="fa-solid fa-check"></i> Mark Read</button>
+              <button class="notif-clear-btn" id="btnPurgeNotifs" title="Clear all alerts from inbox"><i class="fa-solid fa-trash-can"></i> Clear</button>
+            </div>
+          </div>
+          <div class="notif-list" id="notifList">
+            <div class="notif-empty">
+              <i class="fa-regular fa-bell-slash"></i>
+              <span>No new complaints. Listening for RPA workflows...</span>
+            </div>
+          </div>
+          <div class="notif-footer">
+            <span>Auto-synced with AutomationEdge & PostgreSQL</span>
+          </div>
+        </div>
+      </div>
     </div>
   </header>
-
-  <!-- Live Top Metrics Bar -->
-  <section class="kpi-ticker-ribbon" id="kpiTickerRibbon">
-    <div class="kpi-item">
-      <span class="kpi-label"><i class="fa-solid fa-users"></i> Total Customers</span>
-      <div class="kpi-val" id="kpiTotalCustomers">--</div>
-    </div>
-    <div class="kpi-divider"></div>
-    <div class="kpi-item">
-      <span class="kpi-label"><i class="fa-solid fa-file-lines"></i> Fraud Complaints</span>
-      <div class="kpi-val highlight-amber" id="kpiTotalTickets">--</div>
-    </div>
-    <div class="kpi-divider"></div>
-    <div class="kpi-item">
-      <span class="kpi-label"><i class="fa-solid fa-indian-rupee-sign"></i> Total Money Reported</span>
-      <div class="kpi-val highlight-rose" id="kpiTotalAmount">₹0.00</div>
-    </div>
-    <div class="kpi-divider"></div>
-    <div class="kpi-item">
-      <span class="kpi-label"><i class="fa-solid fa-shield-heart"></i> Money Saved / Recovered</span>
-      <div class="kpi-val highlight-emerald" id="kpiRecoveredAmount">₹0.00</div>
-    </div>
-    <div class="kpi-divider"></div>
-    <div class="kpi-item">
-      <span class="kpi-label"><i class="fa-solid fa-lock"></i> Blocked Accounts</span>
-      <div class="kpi-val highlight-cyan" id="kpiFrozenAccounts">--</div>
-    </div>
-    <div class="kpi-divider"></div>
-    <div class="kpi-item">
-      <span class="kpi-label"><i class="fa-solid fa-triangle-exclamation"></i> Urgent Cases</span>
-      <div class="kpi-val highlight-red" id="kpiCriticalCount">--</div>
-    </div>
-  </section>
 
   <!-- Main Portal Layout -->
   <div class="portal-body">
@@ -89,14 +88,18 @@
     <aside class="portal-sidebar">
       <div class="nav-section-title">BANK PORTAL MENU</div>
       <nav class="portal-nav" id="mainNavigation">
-        <button class="nav-tab active" data-tab="tab-fraud-tickets" id="navTabFraudTickets">
+        <button class="nav-tab active" data-tab="tab-home" id="navTabHome">
+          <i class="fa-solid fa-house"></i>
+          <span>Home</span>
+        </button>
+        <button class="nav-tab" data-tab="tab-fraud-tickets" id="navTabFraudTickets">
           <i class="fa-solid fa-clipboard-check"></i>
           <span>Fraud Complaints</span>
-          <span class="nav-badge" id="badgeTicketCount">25</span>
+          <span class="nav-badge" id="badgeTicketCount">0</span>
         </button>
         <button class="nav-tab" data-tab="tab-dashboard" id="navTabDashboard">
           <i class="fa-solid fa-chart-pie"></i>
-          <span>Overview & Summary</span>
+          <span>Summary</span>
         </button>
         <button class="nav-tab" data-tab="tab-customers" id="navTabCustomers">
           <i class="fa-solid fa-users"></i>
@@ -115,15 +118,170 @@
           <i class="fa-solid fa-clock-rotate-left"></i>
           <span>Activity History</span>
         </button>
-
       </nav>
     </aside>
 
     <!-- Main Tab Viewport -->
     <main class="portal-content" id="mainContentArea">
 
+      <!-- ================= TAB 0: HOME HUB ================= -->
+      <section class="tab-panel active" id="tab-home">
+        <!-- Hero Welcome Banner -->
+        <div class="home-hero-card">
+          <div class="home-hero-left">
+            <div class="home-hero-badge">
+              <span class="status-pulse green"></span>
+              <span>Central Branch Operations Active</span>
+            </div>
+            <h1 class="home-hero-title">Welcome, Shreya Deshmukh</h1>
+            <p class="home-hero-subtitle">Senior Branch Officer • Dummy Bank Fraud Prevention & Operations Hub</p>
+            <div class="home-hero-actions">
+              <button class="btn btn-primary" id="btnHomeNewComplaint">
+                <i class="fa-solid fa-plus"></i>
+                <span>Log New Complaint</span>
+              </button>
+              <button class="btn btn-home-outline" id="btnHomeViewQueue">
+                <i class="fa-solid fa-clipboard-check"></i>
+                <span>View Fraud Complaints</span>
+              </button>
+              <button class="btn btn-home-outline" id="btnHomeViewSummary">
+                <i class="fa-solid fa-chart-pie"></i>
+                <span>Executive Summary</span>
+              </button>
+            </div>
+          </div>
+          <div class="home-hero-right">
+            <div class="home-hero-stats-box">
+              <div class="hero-stat-item">
+                <span class="hero-stat-label">BRANCH</span>
+                <strong class="hero-stat-val">Mumbai Central #402</strong>
+              </div>
+              <div class="hero-stat-item">
+                <span class="hero-stat-label">DUTY ROLE</span>
+                <strong class="hero-stat-val" style="color: #93c5fd;">SOC Senior Lead</strong>
+              </div>
+              <div class="hero-stat-item">
+                <span class="hero-stat-label">RPA AUTOMATION</span>
+                <strong class="hero-stat-val" style="color: #6ee7b7;"><i class="fa-solid fa-circle-check"></i> Connected Live</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Live Operations Pulse Row -->
+        <div class="home-pulse-grid">
+          <div class="home-pulse-card" onclick="switchTab('tab-fraud-tickets')">
+            <div class="pulse-card-icon icon-blue">
+              <i class="fa-solid fa-bolt"></i>
+            </div>
+            <div class="pulse-card-info">
+              <span class="pulse-card-label">ACTIVE COMPLAINTS</span>
+              <div class="pulse-card-val highlight-indigo" id="homeActiveTickets">0</div>
+              <span class="pulse-card-sub">Pending staff action <i class="fa-solid fa-arrow-right"></i></span>
+            </div>
+          </div>
+
+          <div class="home-pulse-card" onclick="switchTab('tab-fraud-tickets')">
+            <div class="pulse-card-icon icon-amber">
+              <i class="fa-solid fa-clock-rotate-left"></i>
+            </div>
+            <div class="pulse-card-info">
+              <span class="pulse-card-label">UNDER INVESTIGATION</span>
+              <div class="pulse-card-val highlight-amber" id="homeInProgressTickets">0</div>
+              <span class="pulse-card-sub">In progress cases <i class="fa-solid fa-arrow-right"></i></span>
+            </div>
+          </div>
+
+          <div class="home-pulse-card" onclick="switchTab('tab-dashboard')">
+            <div class="pulse-card-icon icon-emerald">
+              <i class="fa-solid fa-shield-heart"></i>
+            </div>
+            <div class="pulse-card-info">
+              <span class="pulse-card-label">MONEY SAVED & REFUNDED</span>
+              <div class="pulse-card-val highlight-emerald" id="homeRecoveredAmount">₹0.00</div>
+              <span class="pulse-card-sub">Total secured <i class="fa-solid fa-arrow-right"></i></span>
+            </div>
+          </div>
+
+          <div class="home-pulse-card" onclick="switchTab('tab-audit')">
+            <div class="pulse-card-icon icon-cyan">
+              <i class="fa-solid fa-circle-check"></i>
+            </div>
+            <div class="pulse-card-info">
+              <span class="pulse-card-label">SOLVED ARCHIVE</span>
+              <div class="pulse-card-val highlight-cyan" id="homeSolvedTickets">0</div>
+              <span class="pulse-card-sub">Resolved cases <i class="fa-solid fa-arrow-right"></i></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Two Column Hub Section -->
+        <div class="home-two-col-grid">
+          <!-- Left Column: High Priority Queue & Graphical Summary -->
+          <div class="dash-card">
+            <div class="critical-queue-list" id="homeUrgentList">
+              <!-- Populated dynamically -->
+            </div>
+          </div>
+
+          <!-- Right Column: Portal Shortcuts & Quick Links -->
+          <div class="dash-card">
+            <div class="dash-card-header">
+              <span><i class="fa-solid fa-cubes-stacked"></i> Portal Workspaces & Navigation</span>
+              <span class="card-badge">Direct Access</span>
+            </div>
+            <div class="home-shortcuts-list">
+              <div class="home-shortcut-item" onclick="switchTab('tab-fraud-tickets')">
+                <div class="shortcut-icon icon-blue"><i class="fa-solid fa-clipboard-check"></i></div>
+                <div class="shortcut-info">
+                  <strong>Fraud Complaints Queue</strong>
+                  <p>Filter, multi-select, and take batch actions on incoming customer complaints.</p>
+                </div>
+                <i class="fa-solid fa-chevron-right shortcut-arrow"></i>
+              </div>
+
+              <div class="home-shortcut-item" onclick="switchTab('tab-dashboard')">
+                <div class="shortcut-icon icon-purple"><i class="fa-solid fa-chart-pie"></i></div>
+                <div class="shortcut-info">
+                  <strong>Executive Summary Dashboard</strong>
+                  <p>View recovery rate, scam breakdown by category, and channel analytics.</p>
+                </div>
+                <i class="fa-solid fa-chevron-right shortcut-arrow"></i>
+              </div>
+
+              <div class="home-shortcut-item" onclick="switchTab('tab-customers')">
+                <div class="shortcut-icon icon-amber"><i class="fa-solid fa-users"></i></div>
+                <div class="shortcut-info">
+                  <strong>Customer Directory</strong>
+                  <p>Search registered accounts, KYC risk tiers, and balance details.</p>
+                </div>
+                <i class="fa-solid fa-chevron-right shortcut-arrow"></i>
+              </div>
+
+              <div class="home-shortcut-item" onclick="switchTab('tab-transactions')">
+                <div class="shortcut-icon icon-emerald"><i class="fa-solid fa-receipt"></i></div>
+                <div class="shortcut-info">
+                  <strong>Recent Transactions Monitor</strong>
+                  <p>Review real-time transaction ledger with automatic fraud risk flags.</p>
+                </div>
+                <i class="fa-solid fa-chevron-right shortcut-arrow"></i>
+              </div>
+
+              <div class="home-shortcut-item" onclick="switchTab('tab-audit')">
+                <div class="shortcut-icon icon-cyan"><i class="fa-solid fa-clock-rotate-left"></i></div>
+                <div class="shortcut-info">
+                  <strong>History & Solved Archive</strong>
+                  <p>Access archive of all solved complaints and official staff audit logs.</p>
+                </div>
+                <i class="fa-solid fa-chevron-right shortcut-arrow"></i>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- ================= TAB 1: FRAUD COMPLAINTS (PRIMARY) ================= -->
-      <section class="tab-panel active" id="tab-fraud-tickets">
+      <section class="tab-panel" id="tab-fraud-tickets">
         <div class="panel-header">
           <div>
             <h1 class="panel-title">Customer Fraud Complaints</h1>
@@ -157,11 +315,10 @@
             <div class="filter-item">
               <label><i class="fa-solid fa-circle-notch"></i> Status:</label>
               <select id="filterStatus" class="form-select">
-                <option value="ALL">All Statuses</option>
+                <option value="ALL">All Active Statuses</option>
                 <option value="UNDER_INVESTIGATION">In Progress / Checking</option>
                 <option value="FROZEN">Account Blocked</option>
                 <option value="ESCALATED">Escalated to Senior Team</option>
-                <option value="RESOLVED">Solved / Refunded</option>
               </select>
             </div>
 
@@ -191,11 +348,64 @@
           </div>
         </div>
 
+        <!-- Floating Bulk Selection Quick Actions Bar -->
+        <div class="bulk-actions-bar" id="bulkActionsBar" style="display: none;">
+          <div class="bulk-bar-left">
+            <div class="bulk-count-chip">
+              <i class="fa-solid fa-check-double"></i>
+              <span id="bulkSelectedCount">0</span> selected
+            </div>
+            <span class="bulk-bar-label">Quick Actions:</span>
+          </div>
+          <div class="bulk-bar-actions">
+            <button class="btn btn-sm btn-bulk-action" id="btnBulkInvestigate" title="Set status to Checking">
+              <i class="fa-solid fa-magnifying-glass"></i>
+              <span>Mark Checking</span>
+            </button>
+            <button class="btn btn-sm btn-danger" id="btnBulkFreeze" title="Block all associated customer bank accounts">
+              <i class="fa-solid fa-lock"></i>
+              <span>Block Accounts</span>
+            </button>
+            <button class="btn btn-sm btn-success" id="btnBulkResolve" title="Mark selected complaints as Solved / Refunded">
+              <i class="fa-solid fa-circle-check"></i>
+              <span>Mark Solved</span>
+            </button>
+            <button class="btn btn-sm btn-warning" id="btnBulkEscalate" title="Escalate selected complaints to Senior Fraud Team">
+              <i class="fa-solid fa-arrow-trend-up"></i>
+              <span>Escalate</span>
+            </button>
+            
+            <!-- Bulk Staff Assignment -->
+            <div style="display: inline-flex; align-items: center; gap: 4px; background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.18);">
+              <select id="bulkStaffSelect" class="form-select" style="font-size: 11px; padding: 4px 8px; height: 28px; background: #091e42; color: #fff; border-color: rgba(255,255,255,0.3); border-radius: 4px; max-width: 160px;">
+                <option value="Shreya Deshmukh (Support Lead)">Shreya Deshmukh</option>
+                <option value="Rajesh Nair (Fraud Forensics)">Rajesh Nair</option>
+                <option value="Pooja Bansal (Customer Helpdesk Lead)">Pooja Bansal</option>
+                <option value="Vikramaditya Verma (Cyber Crime & Recovery)">Vikramaditya Verma</option>
+              </select>
+              <button class="btn btn-sm btn-bulk-action" id="btnBulkAssignStaff" title="Assign selected complaints to chosen staff member" style="padding: 4px 8px; font-size: 11px;">
+                <i class="fa-solid fa-user-check"></i> Assign Staff
+              </button>
+            </div>
+
+            <button class="btn btn-sm btn-bulk-action" id="btnBulkExport" title="Export only selected complaints to CSV">
+              <i class="fa-solid fa-file-csv"></i>
+              <span>Export CSV</span>
+            </button>
+            <button class="bulk-close-btn" id="btnBulkDeselect" title="Deselect all">
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+          </div>
+        </div>
+
         <!-- Fraud Tickets Table -->
         <div class="table-container">
           <table class="data-table" id="fraudTicketsTable">
             <thead>
               <tr>
+                <th style="width: 38px; text-align: center; padding-left: 8px; padding-right: 8px;">
+                  <input type="checkbox" id="selectAllTicketsCheckbox" title="Select / Deselect all visible complaints" class="table-checkbox">
+                </th>
                 <th>Complaint #</th>
                 <th>Customer Name</th>
                 <th>Contact Info</th>
@@ -210,24 +420,132 @@
             </thead>
             <tbody id="fraudTicketsTableBody">
               <tr>
-                <td colspan="10" class="loading-state">
+                <td colspan="11" class="loading-state">
                   <div class="spinner"></div> Loading customer records...
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
+
+        <!-- Active Complaints Pagination Controls (10 per page) -->
+        <div class="pagination-footer" id="ticketsPagination"></div>
       </section>
 
       <!-- ================= TAB 2: OVERVIEW & SUMMARY ================= -->
       <section class="tab-panel" id="tab-dashboard">
         <div class="panel-header">
           <div>
-            <h1 class="panel-title">Fraud Prevention & Recovery Summary</h1>
-            <p class="panel-subtitle">Simple overview of customer complaints, recovered money, and common scam types.</p>
+            <h1 class="panel-title">Fraud Operations Summary</h1>
+            <p class="panel-subtitle">Executive overview of all customer complaints, financial exposure, recovered funds, and active threats.</p>
           </div>
           <div class="panel-actions">
-            <span class="live-dot-label"><span class="status-pulse green"></span> System Online</span>
+            <!-- Active Tickets Bubble -->
+            <div class="summary-status-bubble bubble-active" id="bubbleActiveContainer" title="All active unresolved complaints">
+              <span class="status-pulse blue"></span>
+              <i class="fa-solid fa-bolt"></i>
+              <span>Active Complaints: <strong id="bubbleActiveTickets">0</strong></span>
+            </div>
+
+            <!-- In Progress Tickets Bubble -->
+            <div class="summary-status-bubble bubble-progress" id="bubbleProgressContainer" title="Complaints currently under investigation">
+              <span class="status-pulse amber"></span>
+              <i class="fa-solid fa-clock-rotate-left"></i>
+              <span>In Progress: <strong id="bubbleInProgressTickets">0</strong></span>
+            </div>
+
+            <span class="live-dot-label"><span class="status-pulse green"></span> System Live</span>
+          </div>
+        </div>
+
+        <!-- Executive Summary KPI Metric Cards Grid -->
+        <div class="summary-kpi-grid">
+          <div class="summary-kpi-card">
+            <div class="summary-kpi-icon icon-blue">
+              <i class="fa-solid fa-users"></i>
+            </div>
+            <div class="summary-kpi-content">
+              <span class="summary-kpi-label">TOTAL CUSTOMERS</span>
+              <div class="summary-kpi-val" id="kpiTotalCustomers">--</div>
+              <span class="summary-kpi-sub">Registered accounts</span>
+            </div>
+          </div>
+
+          <div class="summary-kpi-card">
+            <div class="summary-kpi-icon icon-indigo">
+              <i class="fa-solid fa-bolt"></i>
+            </div>
+            <div class="summary-kpi-content">
+              <span class="summary-kpi-label">ACTIVE TICKETS</span>
+              <div class="summary-kpi-val highlight-indigo" id="kpiActiveTickets">--</div>
+              <span class="summary-kpi-sub">Open & pending resolution</span>
+            </div>
+          </div>
+
+          <div class="summary-kpi-card">
+            <div class="summary-kpi-icon icon-amber">
+              <i class="fa-solid fa-clock-rotate-left"></i>
+            </div>
+            <div class="summary-kpi-content">
+              <span class="summary-kpi-label">IN PROGRESS TICKETS</span>
+              <div class="summary-kpi-val highlight-amber" id="kpiInProgressTickets">--</div>
+              <span class="summary-kpi-sub">Under active investigation</span>
+            </div>
+          </div>
+
+          <div class="summary-kpi-card">
+            <div class="summary-kpi-icon icon-cyan">
+              <i class="fa-solid fa-file-lines"></i>
+            </div>
+            <div class="summary-kpi-content">
+              <span class="summary-kpi-label">TOTAL FRAUD COMPLAINTS</span>
+              <div class="summary-kpi-val highlight-cyan" id="kpiTotalTickets">--</div>
+              <span class="summary-kpi-sub">Lifetime complaints logged</span>
+            </div>
+          </div>
+
+          <div class="summary-kpi-card">
+            <div class="summary-kpi-icon icon-rose">
+              <i class="fa-solid fa-indian-rupee-sign"></i>
+            </div>
+            <div class="summary-kpi-content">
+              <span class="summary-kpi-label">TOTAL MONEY REPORTED</span>
+              <div class="summary-kpi-val highlight-rose" id="kpiTotalAmount">₹0.00</div>
+              <span class="summary-kpi-sub">Disputed fraudulent sum</span>
+            </div>
+          </div>
+
+          <div class="summary-kpi-card">
+            <div class="summary-kpi-icon icon-emerald">
+              <i class="fa-solid fa-shield-heart"></i>
+            </div>
+            <div class="summary-kpi-content">
+              <span class="summary-kpi-label">MONEY SAVED / RECOVERED</span>
+              <div class="summary-kpi-val highlight-emerald" id="kpiRecoveredAmount">₹0.00</div>
+              <span class="summary-kpi-sub">Secured & refunded</span>
+            </div>
+          </div>
+
+          <div class="summary-kpi-card">
+            <div class="summary-kpi-icon icon-purple">
+              <i class="fa-solid fa-lock"></i>
+            </div>
+            <div class="summary-kpi-content">
+              <span class="summary-kpi-label">BLOCKED ACCOUNTS</span>
+              <div class="summary-kpi-val highlight-purple" id="kpiFrozenAccounts">--</div>
+              <span class="summary-kpi-sub">Emergency freeze active</span>
+            </div>
+          </div>
+
+          <div class="summary-kpi-card">
+            <div class="summary-kpi-icon icon-red">
+              <i class="fa-solid fa-triangle-exclamation"></i>
+            </div>
+            <div class="summary-kpi-content">
+              <span class="summary-kpi-label">URGENT CASES</span>
+              <div class="summary-kpi-val highlight-red" id="kpiCriticalCount">--</div>
+              <span class="summary-kpi-sub">Requires urgent attention</span>
+            </div>
           </div>
         </div>
 
@@ -451,33 +769,108 @@
         </div>
       </section>
 
-      <!-- ================= TAB 6: ACTIVITY HISTORY ================= -->
+      <!-- ================= TAB 6: ACTIVITY HISTORY & SOLVED COMPLAINTS ================= -->
       <section class="tab-panel" id="tab-audit">
         <div class="panel-header">
           <div>
-            <h1 class="panel-title">Staff Activity & Complaint Log History</h1>
-            <p class="panel-subtitle">Transparent record of every action taken by bank staff (blocking accounts, status updates, notes).</p>
+            <h1 class="panel-title">History & Solved Archive</h1>
+            <p class="panel-subtitle">Review all solved/refunded customer complaints and transparent bank staff action logs.</p>
           </div>
-          <button class="btn btn-outline" id="btnDownloadSAR"><i class="fa-solid fa-file-pdf"></i> Download Official Report</button>
+          <div class="panel-actions">
+            <button class="btn btn-outline" id="btnExportSolvedCSV"><i class="fa-solid fa-download"></i> Export Solved (CSV)</button>
+            <button class="btn btn-outline" id="btnDownloadSAR"><i class="fa-solid fa-file-pdf"></i> Official Audit PDF</button>
+          </div>
         </div>
 
-        <div class="table-container">
-          <table class="data-table" id="auditTable">
-            <thead>
-              <tr>
-                <th>Log #</th>
-                <th>Complaint #</th>
-                <th>Customer Name</th>
-                <th>Staff Member</th>
-                <th>Action Taken</th>
-                <th>Notes / Details</th>
-                <th>Date & Time</th>
-              </tr>
-            </thead>
-            <tbody id="auditTableBody">
-              <!-- Populated dynamically -->
-            </tbody>
-          </table>
+        <!-- History Sub-Tabs Navigation -->
+        <div class="history-sub-tabs-bar">
+          <button class="history-sub-tab active" id="btnSubTabSolved" data-subtab="subtab-solved-list">
+            <i class="fa-solid fa-circle-check"></i>
+            <span>Solved Complaints</span>
+            <span class="history-tab-badge" id="solvedCountBadge">0</span>
+          </button>
+          <button class="history-sub-tab" id="btnSubTabAudit" data-subtab="subtab-audit-logs">
+            <i class="fa-solid fa-clock-rotate-left"></i>
+            <span>Staff Activity Logs</span>
+          </button>
+        </div>
+
+        <!-- Sub-Panel 1: Solved Complaints Table -->
+        <div class="history-sub-panel active" id="subtab-solved-list">
+          <div class="filter-controls-card" style="margin-bottom: 12px;">
+            <div class="search-input-group">
+              <i class="fa-solid fa-magnifying-glass"></i>
+              <input type="text" id="solvedSearchInput" placeholder="Search solved complaints by customer name, complaint #, account, or email...">
+            </div>
+            <div class="filter-dropdowns">
+              <div class="filter-item">
+                <label><i class="fa-solid fa-tags"></i> Scam Type:</label>
+                <select id="filterSolvedIncidentType" class="form-select">
+                  <option value="ALL">All Scam Types</option>
+                  <option value="Transfer">Bank Transfer Scam</option>
+                  <option value="SIM">SIM Card / Fake OTP</option>
+                  <option value="Email">Fake Email / Phishing</option>
+                  <option value="Card">ATM / Card Cloning</option>
+                  <option value="Voice">Fake Phone Call Scam</option>
+                  <option value="QR">Fake QR Code Scam</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="results-meta-bar">
+            <div>Showing <strong id="visibleSolvedCount">0</strong> solved complaints</div>
+            <div style="font-size: 12px; color: var(--emerald); font-weight: 600;">
+              <i class="fa-solid fa-circle-check"></i> Solved / Refunded Archive
+            </div>
+          </div>
+
+          <div class="table-container">
+            <table class="data-table" id="solvedTicketsTable">
+              <thead>
+                <tr>
+                  <th>Complaint #</th>
+                  <th>Customer Name</th>
+                  <th>Contact Info</th>
+                  <th>Account # / Type</th>
+                  <th>Type of Fraud</th>
+                  <th>Amount (₹)</th>
+                  <th>Recovered (₹)</th>
+                  <th>Status</th>
+                  <th>Handled By</th>
+                  <th style="text-align: right;">Action</th>
+                </tr>
+              </thead>
+              <tbody id="solvedTicketsTableBody">
+                <!-- Populated dynamically -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Solved Archive Pagination Controls (10 per page) -->
+          <div class="pagination-footer" id="solvedPagination"></div>
+        </div>
+
+        <!-- Sub-Panel 2: Staff Audit Logs Table -->
+        <div class="history-sub-panel" id="subtab-audit-logs" style="display: none;">
+          <div class="table-container">
+            <table class="data-table" id="auditTable">
+              <thead>
+                <tr>
+                  <th>Log #</th>
+                  <th>Complaint #</th>
+                  <th>Customer Name</th>
+                  <th>Staff Member</th>
+                  <th>Action Taken</th>
+                  <th>Notes / Details</th>
+                  <th>Date & Time</th>
+                </tr>
+              </thead>
+              <tbody id="auditTableBody">
+                <!-- Populated dynamically -->
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
 
@@ -567,6 +960,31 @@
           <div class="narrative-box" style="margin-top: 10px; background: #eff6ff; border-color: #bfdbfe;">
             <span class="dossier-label" style="color: #0052cc;"><i class="fa-solid fa-circle-check"></i> Action Taken by Bank:</span>
             <p id="dossierAction" class="narrative-text">Transfer recalled; Account secured.</p>
+          </div>
+        </div>
+
+        <!-- Assigned Staff / Officer Card -->
+        <div class="drawer-card">
+          <div class="drawer-card-title"><i class="fa-solid fa-user-tie"></i> Assigned Staff Officer</div>
+          <div class="drawer-staff-row">
+            <div class="staff-avatar-badge">
+              <i class="fa-solid fa-user-shield"></i>
+            </div>
+            <div style="flex: 1;">
+              <span class="dossier-label">Current Assignee:</span>
+              <strong id="dossierInvestigator" class="dossier-value highlight-cyan">Shreya Deshmukh (Support Lead)</strong>
+            </div>
+          </div>
+          <div style="margin-top: 12px; display: flex; gap: 8px;">
+            <select id="selectDrawerStaff" class="form-select" style="flex: 1;">
+              <option value="Shreya Deshmukh (Support Lead)">Shreya Deshmukh (Support Lead)</option>
+              <option value="Rajesh Nair (Fraud Forensics)">Rajesh Nair (Fraud Forensics)</option>
+              <option value="Pooja Bansal (Customer Helpdesk Lead)">Pooja Bansal (Customer Helpdesk Lead)</option>
+              <option value="Vikramaditya Verma (Cyber Crime & Recovery)">Vikramaditya Verma (Cyber Crime & Recovery)</option>
+            </select>
+            <button class="btn btn-sm btn-primary" id="btnReassignStaff">
+              <i class="fa-solid fa-user-check"></i> Reassign
+            </button>
           </div>
         </div>
 
@@ -668,12 +1086,20 @@
             <input type="number" id="formAmount" required step="0.01" placeholder="e.g. 50000.00">
           </div>
           <div class="form-group">
-            <label>Priority Level *</label>
-            <select id="formSeverity" class="form-select" required>
-              <option value="CRITICAL">Urgent (Large amount / Immediate action needed)</option>
-              <option value="HIGH" selected>High Priority (Unauthorized transfer / SIM swap)</option>
-              <option value="MEDIUM">Medium Priority (Phishing / Card issue)</option>
-              <option value="LOW">Low Priority (Minor charge / Billing dispute)</option>
+            <label>Priority Level <span style="font-size: 11px; color: var(--primary); font-weight: 600;">(Auto-Preset by Amount)</span></label>
+            <div id="formSeverityDisplay" class="preset-priority-box">
+              <span id="formSeverityBadge" class="tag-pill tag-low"><i class="fa-solid fa-circle-info"></i> Normal Priority (&lt; ₹10,000)</span>
+              <span class="preset-priority-hint"><i class="fa-solid fa-lock"></i> Auto-locked</span>
+            </div>
+            <input type="hidden" id="formSeverity" value="LOW">
+          </div>
+          <div class="form-group">
+            <label>Assign to Staff Officer</label>
+            <select id="formStaffAssignee" class="form-select">
+              <option value="Shreya Deshmukh (Support Lead)" selected>Shreya Deshmukh (Support Lead)</option>
+              <option value="Rajesh Nair (Fraud Forensics)">Rajesh Nair (Fraud Forensics)</option>
+              <option value="Pooja Bansal (Customer Helpdesk Lead)">Pooja Bansal (Customer Helpdesk Lead)</option>
+              <option value="Vikramaditya Verma (Cyber Crime & Recovery)">Vikramaditya Verma (Cyber Crime & Recovery)</option>
             </select>
           </div>
           <div class="form-group full-span">
@@ -699,6 +1125,6 @@
   <!-- Toast Notification Container -->
   <div class="toast-container" id="toastContainer"></div>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=4.5"></script>
 </body>
 </html>
