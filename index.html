@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=5.4">
+  <link rel="stylesheet" href="styles.css?v=5.5">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body class="bank-portal-theme">
@@ -217,45 +217,11 @@
 
         <!-- Two Column Hub Section -->
         <div class="home-two-col-grid">
-          <!-- Left Column: High Priority Queue & Graphical Summary -->
-          <div class="dash-card">
-            <div class="critical-queue-list" id="homeUrgentList">
-              <!-- Populated dynamically -->
-            </div>
-          </div>
-
-          <!-- Right Column: Money Recovery Rate & Quick Links -->
+          <!-- Left Column: Operations, Urgent Queue & Navigation -->
           <div style="display: flex; flex-direction: column; gap: 20px;">
             <div class="dash-card">
-              <div class="dash-card-header">
-                <span><i class="fa-solid fa-piggy-bank"></i> Money Recovery Rate</span>
-                <span class="card-badge">Safety Score</span>
-              </div>
-              <div class="recovery-metrics-box">
-                <div class="circular-metric" id="homeCircularMetric">
-                  <div class="metric-circle-inner">
-                    <span class="metric-circle-val" id="homeRecoveryRatePercent">61%</span>
-                    <span class="metric-circle-sub">Money Saved</span>
-                  </div>
-                </div>
-                <div class="recovery-details-list">
-                  <div class="rec-row">
-                    <span>Total Reported Amount:</span>
-                    <strong id="homeRecGrossVal">₹0.00</strong>
-                  </div>
-                  <div class="rec-row">
-                    <span>Money Recovered / Saved:</span>
-                    <strong class="highlight-emerald" id="homeRecRecoveredVal">₹0.00</strong>
-                  </div>
-                  <div class="rec-row">
-                    <span>Under Process:</span>
-                    <strong class="highlight-amber" id="homeRecPendingVal">₹0.00</strong>
-                  </div>
-                  <div class="rec-row">
-                    <span>Bank Guarantee:</span>
-                    <strong class="highlight-cyan">Fully Protected</strong>
-                  </div>
-                </div>
+              <div class="critical-queue-list" id="homeUrgentList">
+                <!-- Populated dynamically -->
               </div>
             </div>
 
@@ -309,6 +275,52 @@
                   </div>
                   <i class="fa-solid fa-chevron-right shortcut-arrow"></i>
                 </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right Column: Visual Charts & Analytics (Recovery Gauge + Status Donut) -->
+          <div style="display: flex; flex-direction: column; gap: 20px;">
+            <div class="dash-card">
+              <div class="dash-card-header">
+                <span><i class="fa-solid fa-piggy-bank"></i> Money Recovery Rate</span>
+                <span class="card-badge">Safety Score</span>
+              </div>
+              <div class="recovery-metrics-box">
+                <div class="circular-metric" id="homeCircularMetric">
+                  <div class="metric-circle-inner">
+                    <span class="metric-circle-val" id="homeRecoveryRatePercent">61%</span>
+                    <span class="metric-circle-sub">Money Saved</span>
+                  </div>
+                </div>
+                <div class="recovery-details-list">
+                  <div class="rec-row">
+                    <span>Total Reported Amount:</span>
+                    <strong id="homeRecGrossVal">₹0.00</strong>
+                  </div>
+                  <div class="rec-row">
+                    <span>Money Recovered / Saved:</span>
+                    <strong class="highlight-emerald" id="homeRecRecoveredVal">₹0.00</strong>
+                  </div>
+                  <div class="rec-row">
+                    <span>Under Process:</span>
+                    <strong class="highlight-amber" id="homeRecPendingVal">₹0.00</strong>
+                  </div>
+                  <div class="rec-row">
+                    <span>Bank Guarantee:</span>
+                    <strong class="highlight-cyan">Fully Protected</strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="dash-card">
+              <div class="dash-card-header">
+                <span><i class="fa-solid fa-chart-pie"></i> Complaints Status Breakdown</span>
+                <span class="card-badge">Live Analytics</span>
+              </div>
+              <div id="homeStatusDonutChart">
+                <!-- Populated dynamically -->
               </div>
             </div>
           </div>
@@ -1160,6 +1172,6 @@
   <!-- Toast Notification Container -->
   <div class="toast-container" id="toastContainer"></div>
 
-  <script src="app.js?v=5.4"></script>
+  <script src="app.js?v=5.5"></script>
 </body>
 </html>

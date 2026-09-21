@@ -533,23 +533,28 @@ function renderHomeUrgentList() {
     return needsAction && isUrgent;
   });
 
+  // Always render the status breakdown donut chart on the RIGHT side
+  const donutContainer = document.getElementById("homeStatusDonutChart");
+  if (donutContainer) {
+    donutContainer.innerHTML = generateSummaryVisualizerHtml();
+  }
+
   if (urgentTickets.length === 0) {
     container.innerHTML = `
-      <div class="home-resolved-banner">
+      <div class="home-resolved-banner" style="margin-bottom: 0;">
         <i class="fa-solid fa-circle-check"></i>
         <div>
           <strong>All Urgent Complaints Addressed & Processed</strong>
-          <p>Zero critical escalations pending immediate triage. Live breakdown below:</p>
+          <p>Zero critical escalations pending immediate triage. All accounts secured and live monitoring active.</p>
         </div>
       </div>
-      ${generateSummaryVisualizerHtml()}
     `;
     return;
   }
 
   const displayTickets = urgentTickets.slice(0, 5);
 
-  const urgentHtml = `
+  container.innerHTML = `
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
       <span style="font-size: 13px; font-weight: 700; color: #dc2626; display: flex; align-items: center; gap: 6px;">
         <i class="fa-solid fa-triangle-exclamation"></i> Urgent Action Required (${urgentTickets.length})
@@ -574,11 +579,6 @@ function renderHomeUrgentList() {
         </div>
       </div>
     `).join("")}
-  `;
-
-  container.innerHTML = `
-    ${urgentHtml}
-    ${generateSummaryVisualizerHtml()}
   `;
 }
 
