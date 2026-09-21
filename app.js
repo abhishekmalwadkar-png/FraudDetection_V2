@@ -1613,7 +1613,7 @@ async function loadCustomers() {
         </td>
         <td><span style="font-size: 12px; color: var(--text-muted);">${escapeHtml(c.email)}</span></td>
         <td><span style="font-size: 12px;">${escapeHtml(c.city || 'N/A')}, ${escapeHtml(c.state || '')}</span></td>
-        <td><span class="code-font" style="color: #fff;">${c.account_number || 'ACT-PENDING'}</span></td>
+        <td><span class="code-font" style="color: var(--text-main);">${c.account_number || 'ACT-PENDING'}</span></td>
         <td><span class="tag-pill tag-cyan">${c.account_type || 'CHECKING'}</span></td>
         <td><span class="amount-font highlight-emerald">${formatCurrency(c.balance)}</span></td>
         <td>
@@ -1662,7 +1662,7 @@ async function loadTransactions() {
             <span class="customer-sub code-font">${tx.account_number}</span>
           </div>
         </td>
-        <td><span class="code-font" style="color: #fff;">${tx.account_number}</span></td>
+        <td><span class="code-font" style="color: var(--text-main);">${tx.account_number}</span></td>
         <td><span class="amount-font highlight-red">${formatCurrency(tx.amount)}</span></td>
         <td><span class="tag-pill tag-cyan">${tx.txn_type}</span></td>
         <td><span style="font-size: 12px;">${escapeHtml(tx.merchant_or_recipient)}</span></td>
@@ -1725,7 +1725,7 @@ async function loadAnalytics() {
         <div class="channel-card">
           <div class="channel-icon"><i class="fa-solid fa-tower-broadcast"></i></div>
           <div>
-            <strong style="font-size: 13px; color: #fff;">${escapeHtml(ch.channel)}</strong>
+            <strong style="font-size: 13px; color: var(--text-main);">${escapeHtml(ch.channel)}</strong>
             <div style="font-size: 11px; color: var(--text-dim); margin-top: 2px;">
               ${ch.count} reports • ${formatCurrency(ch.amount)}
             </div>
@@ -1741,7 +1741,7 @@ async function loadAnalytics() {
       critQueueEl.innerHTML = critTickets.map(ct => `
         <div class="queue-item" onclick="openIncidentDossier('${ct.ticket_id}')">
           <div>
-            <strong style="font-size: 13px; color: #fff;">${escapeHtml(ct.full_name)} (${ct.ticket_number})</strong>
+            <strong style="font-size: 13px; color: var(--text-main);">${escapeHtml(ct.full_name)} (${ct.ticket_number})</strong>
             <div style="font-size: 11px; color: var(--text-dim);">${escapeHtml(ct.incident_type)}</div>
           </div>
           <div style="text-align: right;">
@@ -1767,7 +1767,7 @@ async function loadAuditLogs() {
       <tr>
         <td><span class="code-font" style="color: var(--text-dim);">#LOG-${l.log_id}</span></td>
         <td><span class="code-font highlight-cyan">${l.ticket_number || 'SYSTEM'}</span></td>
-        <td><strong style="color: #fff; font-size: 12px;">${escapeHtml(l.actor)}</strong></td>
+        <td><strong style="color: var(--text-main); font-size: 12px;">${escapeHtml(l.actor)}</strong></td>
         <td><span class="tag-pill tag-high">${escapeHtml(l.action)}</span></td>
         <td><span style="font-size: 12px; color: var(--text-muted);">${escapeHtml(l.details)}</span></td>
         <td><span class="code-font" style="font-size: 11px; color: var(--text-dim);">${escapeHtml(l.ip_address || '10.0.0.1')}</span></td>
