@@ -45,8 +45,8 @@
   --red: #dc2626;
   --purple: #7c3aed;
   
-  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
+  --font-sans: 'Times New Roman', Times, serif;
+  --font-mono: 'Times New Roman', Times, serif;
   
   --shadow-xs: 0 1px 2px rgba(10, 37, 64, 0.04);
   --shadow-sm: 0 1px 3px rgba(10, 37, 64, 0.05), 0 1px 2px rgba(10, 37, 64, 0.03);
