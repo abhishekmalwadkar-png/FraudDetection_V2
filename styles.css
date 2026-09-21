@@ -3,11 +3,11 @@
    ========================================================== */
 
 :root {
-  /* Clean White & Light Backgrounds */
-  --bg-body: #f4f6f9;
+  /* Enterprise Banking Light Slate & Pure White Backgrounds */
+  --bg-body: #f8fafc;
   --bg-header: #ffffff;
-  --bg-sidebar: #0b1f3a;
-  --bg-sidebar-hover: #132d52;
+  --bg-sidebar: #0a2540;
+  --bg-sidebar-hover: #0f172a;
   --bg-surface: #ffffff;
   --bg-card: #ffffff;
   --bg-card-alt: #f8fafc;
@@ -17,7 +17,7 @@
   /* Borders */
   --border-subtle: #e2e8f0;
   --border-card: #e5e9f0;
-  --border-focus: #2563eb;
+  --border-focus: #0052cc;
   
   /* Text */
   --text-main: #0f172a;
@@ -25,28 +25,33 @@
   --text-dim: #64748b;
   --text-inverse: #ffffff;
   
-  /* Corporate Blue Palette */
+  /* Enterprise Royal Navy & Banking Palette */
   --primary: #0052cc;
   --primary-hover: #0747a6;
   --primary-light: #e6f0ff;
-  --primary-glow: rgba(0, 82, 204, 0.2);
+  --primary-glow: rgba(0, 82, 204, 0.18);
   
-  --royal-blue: #1d4ed8;
+  --royal-blue: #0052cc;
+  --midnight-slate: #0a2540;
   --sky-blue: #0284c7;
-  --cyan: #0891b2;
+  --cyan: #0284c7;
+  --cyan-bg: #e0f2fe;
   --emerald: #059669;
+  --emerald-bg: #ecfdf5;
   --amber: #d97706;
-  --rose: #e11d48;
+  --amber-bg: #fef3c7;
+  --rose: #dc2626;
+  --rose-bg: #ffe4e6;
   --red: #dc2626;
   --purple: #7c3aed;
   
   --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
   
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -1px rgba(0, 0, 0, 0.04);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.04);
+  --shadow-xs: 0 1px 2px rgba(10, 37, 64, 0.04);
+  --shadow-sm: 0 1px 3px rgba(10, 37, 64, 0.05), 0 1px 2px rgba(10, 37, 64, 0.03);
+  --shadow-md: 0 4px 6px -1px rgba(10, 37, 64, 0.07), 0 2px 4px -1px rgba(10, 37, 64, 0.04);
+  --shadow-lg: 0 10px 15px -3px rgba(10, 37, 64, 0.09), 0 4px 6px -2px rgba(10, 37, 64, 0.04);
   
   --radius-sm: 6px;
   --radius-md: 8px;
