@@ -553,6 +553,14 @@ body.bank-portal-theme {
   border-color: #cbd5e1;
 }
 
+.summary-kpi-card:has(.icon-blue) { background: linear-gradient(145deg, #ffffff 0%, #f0f7ff 100%); border-left: 4px solid #0052cc; }
+.summary-kpi-card:has(.icon-indigo) { background: linear-gradient(145deg, #ffffff 0%, #f5f3ff 100%); border-left: 4px solid #4338ca; }
+.summary-kpi-card:has(.icon-amber) { background: linear-gradient(145deg, #ffffff 0%, #fffdf0 100%); border-left: 4px solid #d97706; }
+.summary-kpi-card:has(.icon-rose), .summary-kpi-card:has(.icon-red) { background: linear-gradient(145deg, #ffffff 0%, #fff1f2 100%); border-left: 4px solid #dc2626; }
+.summary-kpi-card:has(.icon-emerald) { background: linear-gradient(145deg, #ffffff 0%, #f0fdf4 100%); border-left: 4px solid #059669; }
+.summary-kpi-card:has(.icon-cyan) { background: linear-gradient(145deg, #ffffff 0%, #f0f9ff 100%); border-left: 4px solid #0284c7; }
+.summary-kpi-card:has(.icon-purple) { background: linear-gradient(145deg, #ffffff 0%, #faf5ff 100%); border-left: 4px solid #7e22ce; }
+
 .summary-kpi-icon {
   width: 48px;
   height: 48px;
@@ -2419,13 +2427,55 @@ body.bank-portal-theme {
   gap: 14px;
   box-shadow: var(--shadow-sm);
   cursor: pointer;
+  position: relative;
+  overflow: hidden;
   transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
 .home-pulse-card:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
-  border-color: #93c5fd;
+}
+
+/* Decent Color Shades for Top Metric Cards */
+.home-pulse-card.pulse-blue {
+  background: linear-gradient(145deg, #ffffff 0%, #f0f7ff 100%);
+  border: 1px solid #bfdbfe;
+  border-left: 4px solid #0052cc;
+}
+.home-pulse-card.pulse-blue:hover {
+  border-color: #60a5fa;
+  box-shadow: 0 6px 16px rgba(0, 82, 204, 0.12);
+}
+
+.home-pulse-card.pulse-amber {
+  background: linear-gradient(145deg, #ffffff 0%, #fffdf0 100%);
+  border: 1px solid #fde68a;
+  border-left: 4px solid #d97706;
+}
+.home-pulse-card.pulse-amber:hover {
+  border-color: #fbbf24;
+  box-shadow: 0 6px 16px rgba(217, 119, 6, 0.12);
+}
+
+.home-pulse-card.pulse-emerald {
+  background: linear-gradient(145deg, #ffffff 0%, #f0fdf4 100%);
+  border: 1px solid #bbf7d0;
+  border-left: 4px solid #059669;
+}
+.home-pulse-card.pulse-emerald:hover {
+  border-color: #4ade80;
+  box-shadow: 0 6px 16px rgba(5, 150, 105, 0.12);
+}
+
+.home-pulse-card.pulse-cyan {
+  background: linear-gradient(145deg, #ffffff 0%, #f0f9ff 100%);
+  border: 1px solid #bae6fd;
+  border-left: 4px solid #0284c7;
+}
+.home-pulse-card.pulse-cyan:hover {
+  border-color: #38bdf8;
+  box-shadow: 0 6px 16px rgba(2, 132, 199, 0.12);
 }
 
 .pulse-card-icon {
@@ -2437,6 +2487,31 @@ body.bank-portal-theme {
   justify-content: center;
   font-size: 18px;
   flex-shrink: 0;
+}
+
+.pulse-card-icon.icon-blue {
+  background: #e0edff;
+  color: #0052cc;
+}
+
+.pulse-card-icon.icon-amber {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+.pulse-card-icon.icon-emerald {
+  background: #dcfce7;
+  color: #059669;
+}
+
+.pulse-card-icon.icon-cyan {
+  background: #e0f2fe;
+  color: #0284c7;
+}
+
+.pulse-card-icon.icon-purple {
+  background: #f3e8ff;
+  color: #7e22ce;
 }
 
 .pulse-card-info {
@@ -2457,9 +2532,13 @@ body.bank-portal-theme {
   font-size: 20px;
   font-weight: 800;
   font-family: var(--font-mono);
-  color: #0f172a;
   margin: 2px 0;
 }
+
+.pulse-card-val.highlight-indigo { color: #0052cc; }
+.pulse-card-val.highlight-amber { color: #d97706; }
+.pulse-card-val.highlight-emerald { color: #059669; }
+.pulse-card-val.highlight-cyan { color: #0284c7; }
 
 .pulse-card-sub {
   font-size: 11px;
@@ -2469,6 +2548,11 @@ body.bank-portal-theme {
   align-items: center;
   gap: 4px;
 }
+
+.pulse-blue .pulse-card-sub { color: #0052cc; }
+.pulse-amber .pulse-card-sub { color: #d97706; }
+.pulse-emerald .pulse-card-sub { color: #059669; }
+.pulse-cyan .pulse-card-sub { color: #0284c7; }
 
 /* Home Two Column Grid */
 .home-two-col-grid {
