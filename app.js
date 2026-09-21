@@ -214,8 +214,35 @@ function initEventListeners() {
   // PDF Export trigger
   const btnDownloadSAR = document.getElementById("btnDownloadSAR");
   if (btnDownloadSAR) {
-    btnDownloadSAR.addEventListener("click", () => {
-      showToast("FinCEN Suspicious Activity Report (SAR) XML/PDF generated & logged.", "success");
+    btnDownloadSAR.addEventListener("click", async () => {
+      const origHtml = btnDownloadSAR.innerHTML;
+      try {
+        btnDownloadSAR.disabled = true;
+        btnDownloadSAR.innerHTML = `<div class="spinner" style="width: 14px; height: 14px; border-width: 2px;"></div> Generating PDF...`;
+        showToast("Generating Official Fraud Audit & Compliance PDF...", "info");
+
+        const res = await fetch("/api/reports/audit-pdf");
+        if (!res.ok) {
+          throw new Error(`Server returned HTTP ${res.status}`);
+        }
+
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `Official_Fraud_Audit_Report_${new Date().toISOString().slice(0, 10)}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+
+        showToast("Official Audit PDF downloaded successfully.", "success");
+      } catch (err) {
+        showToast("Error generating PDF: " + err.message, "error");
+      } finally {
+        btnDownloadSAR.disabled = false;
+        btnDownloadSAR.innerHTML = origHtml;
+      }
     });
   }
 

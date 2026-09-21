@@ -6,6 +6,7 @@ Interactive Swagger Documentation available at: /docs & /redoc
 """
 
 import os
+import io
 import time
 import json
 import uuid
@@ -15,11 +16,21 @@ from datetime import datetime, date, timezone
 from typing import Optional, Any, Dict, List, Union
 
 from fastapi import FastAPI, Request, Response, HTTPException, status, Depends
-from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
+from fastapi.responses import JSONResponse, FileResponse, HTMLResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
 import pg8000.dbapi
 import uvicorn
+
+try:
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    HAS_REPORTLAB = True
+except ImportError:
+    HAS_REPORTLAB = False
+
 
 from config import (
     APP_ENV, LOG_LEVEL,
@@ -846,6 +857,208 @@ def api_get_customers():
                 "fraud_reports_count": r[13]
             })
         return clean_db_record(customers)
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.get("/api/reports/audit-pdf", tags=["Audit & Compliance"])
+def api_download_audit_pdf(request: Request):
+    """Generate and stream an official, authenticated PDF Audit & SAR Compliance Report."""
+    if not HAS_REPORTLAB:
+        raise HTTPException(status_code=500, detail="ReportLab is not installed on server.")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        # Fetch overview stats
+        cursor.execute("SELECT COUNT(*), COALESCE(SUM(amount_involved), 0), COALESCE(SUM(recovered_amount), 0) FROM fraud_tickets;")
+        tot_row = cursor.fetchone()
+        tot_cases = tot_row[0] or 0
+        tot_amount = float(tot_row[1] or 0)
+        tot_recovered = float(tot_row[2] or 0)
+
+        cursor.execute("SELECT COUNT(*) FROM fraud_tickets WHERE status = 'RESOLVED';")
+        solved_count = cursor.fetchone()[0] or 0
+
+        cursor.execute("SELECT COUNT(*) FROM fraud_tickets WHERE status = 'FROZEN';")
+        frozen_count = cursor.fetchone()[0] or 0
+
+        # Fetch recent 35 audit logs
+        cursor.execute("""
+            SELECT log_id, ticket_number, actor, action, details, created_at, ip_address
+            FROM audit_logs
+            ORDER BY created_at DESC
+            LIMIT 35;
+        """)
+        logs = cursor.fetchall()
+
+        # Build PDF with ReportLab
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            leftMargin=36,
+            rightMargin=36,
+            topMargin=36,
+            bottomMargin=36
+        )
+
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle(
+            'DocTitle',
+            parent=styles['Normal'],
+            fontName='Helvetica-Bold',
+            fontSize=16,
+            leading=20,
+            textColor=colors.HexColor('#0052cc')
+        )
+        subtitle_style = ParagraphStyle(
+            'DocSubtitle',
+            parent=styles['Normal'],
+            fontName='Helvetica',
+            fontSize=9,
+            leading=12,
+            textColor=colors.HexColor('#475569')
+        )
+        section_style = ParagraphStyle(
+            'SectionTitle',
+            parent=styles['Normal'],
+            fontName='Helvetica-Bold',
+            fontSize=11,
+            leading=15,
+            textColor=colors.HexColor('#0f172a')
+        )
+        cell_style = ParagraphStyle(
+            'CellText',
+            parent=styles['Normal'],
+            fontName='Helvetica',
+            fontSize=8,
+            leading=10,
+            textColor=colors.HexColor('#1e293b')
+        )
+        cell_bold = ParagraphStyle(
+            'CellBold',
+            parent=styles['Normal'],
+            fontName='Helvetica-Bold',
+            fontSize=8,
+            leading=10,
+            textColor=colors.HexColor('#0f172a')
+        )
+
+        story = []
+
+        # Header Title
+        story.append(Paragraph("DUMMY BANK OF INDIA", title_style))
+        story.append(Paragraph("Official Fraud Audit & SAR Compliance Report | SOC Operations", subtitle_style))
+        story.append(Spacer(1, 6))
+        story.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#0052cc'), spaceBefore=2, spaceAfter=10))
+
+        # Metadata Row
+        now_str = datetime.now().strftime("%d %b %Y, %I:%M %p")
+        report_id = f"SAR-AUD-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
+        meta_data = [
+            [
+                Paragraph(f"<b>Report ID:</b> {report_id}", cell_style),
+                Paragraph(f"<b>Generated At:</b> {now_str}", cell_style)
+            ],
+            [
+                Paragraph("<b>Classification:</b> CONFIDENTIAL / AUDIT GRADE", cell_style),
+                Paragraph("<b>Authorizing Unit:</b> Fraud Intelligence & SOC", cell_style)
+            ]
+        ]
+        meta_table = Table(meta_data, colWidths=[260, 260])
+        meta_table.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#f8fafc')),
+            ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor('#cbd5e1')),
+            ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#e2e8f0')),
+            ('PADDING', (0,0), (-1,-1), 5),
+        ]))
+        story.append(meta_table)
+        story.append(Spacer(1, 12))
+
+        # Executive Summary Metrics
+        story.append(Paragraph("Executive Fraud Metrics Summary", section_style))
+        story.append(Spacer(1, 5))
+
+        recovery_rate = round((tot_recovered / tot_amount * 100), 1) if tot_amount > 0 else 0
+        summary_headers = [
+            Paragraph("<font color='white'><b>Total Cases</b></font>", cell_style),
+            Paragraph("<font color='white'><b>Total Exposure</b></font>", cell_style),
+            Paragraph("<font color='white'><b>Recovered Funds</b></font>", cell_style),
+            Paragraph("<font color='white'><b>Solved Cases</b></font>", cell_style),
+            Paragraph("<font color='white'><b>Recovery Rate</b></font>", cell_style)
+        ]
+        summary_values = [
+            Paragraph(f"<b>{tot_cases}</b>", cell_bold),
+            Paragraph(f"<b>INR {tot_amount:,.2f}</b>", cell_bold),
+            Paragraph(f"<b>INR {tot_recovered:,.2f}</b>", cell_bold),
+            Paragraph(f"<b>{solved_count} Cases</b>", cell_bold),
+            Paragraph(f"<b>{recovery_rate}%</b>", cell_bold)
+        ]
+        summary_table = Table([summary_headers, summary_values], colWidths=[104, 110, 110, 100, 96])
+        summary_table.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#0052cc')),
+            ('BACKGROUND', (0,1), (-1,1), colors.HexColor('#f1f5f9')),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#cbd5e1')),
+            ('PADDING', (0,0), (-1,-1), 5),
+        ]))
+        story.append(summary_table)
+        story.append(Spacer(1, 14))
+
+        # Audit Logs Activity Table
+        story.append(Paragraph("Staff Forensic Activity & Action Trail (Recent 35 Events)", section_style))
+        story.append(Spacer(1, 5))
+
+        audit_headers = [
+            Paragraph("<font color='white'><b>Log #</b></font>", cell_style),
+            Paragraph("<font color='white'><b>Complaint #</b></font>", cell_style),
+            Paragraph("<font color='white'><b>Actor / Staff</b></font>", cell_style),
+            Paragraph("<font color='white'><b>Action Taken</b></font>", cell_style),
+            Paragraph("<font color='white'><b>Details / Notes</b></font>", cell_style),
+            Paragraph("<font color='white'><b>Timestamp</b></font>", cell_style)
+        ]
+        audit_rows = [audit_headers]
+        for log in logs:
+            log_id, t_num, actor, action, details, created_at, ip_addr = log
+            time_str = created_at.strftime("%d-%m-%Y %H:%M") if hasattr(created_at, 'strftime') else str(created_at)[:16]
+            audit_rows.append([
+                Paragraph(f"#{log_id}", cell_style),
+                Paragraph(f"<b>{t_num}</b>", cell_bold),
+                Paragraph(str(actor or 'System Officer')[:22], cell_style),
+                Paragraph(str(action or 'UPDATED')[:24], cell_style),
+                Paragraph(str(details or 'Staff action executed')[:50], cell_style),
+                Paragraph(time_str, cell_style)
+            ])
+
+        if len(audit_rows) == 1:
+            audit_rows.append([Paragraph("No audit logs recorded yet", cell_style)] * 6)
+
+        audit_table = Table(audit_rows, colWidths=[40, 85, 95, 95, 130, 75])
+        audit_table.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1e293b')),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#e2e8f0')),
+            ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#f8fafc')]),
+            ('PADDING', (0,0), (-1,-1), 4),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ]))
+        story.append(audit_table)
+
+        # Footer Notice
+        story.append(Spacer(1, 14))
+        story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#94a3b8'), spaceBefore=4, spaceAfter=6))
+        story.append(Paragraph("This document contains confidential banking information generated automatically by Dummy Bank Portal. Any unauthorized distribution, reproduction, or alteration is strictly prohibited under banking regulatory laws.", subtitle_style))
+
+        doc.build(story)
+        buffer.seek(0)
+        
+        pdf_filename = f"Official_Fraud_Audit_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        return StreamingResponse(
+            buffer,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{pdf_filename}"'}
+        )
     finally:
         cursor.close()
         conn.close()
