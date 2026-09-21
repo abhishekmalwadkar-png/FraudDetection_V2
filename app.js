@@ -452,11 +452,11 @@ function generateSummaryVisualizerHtml() {
   const openCount = allTickets.filter(t => !['RESOLVED', 'UNDER_INVESTIGATION', 'FROZEN', 'ESCALATED', 'CLOSED'].includes(t.status)).length;
 
   const statusSegments = [
-    { label: "Solved / Refunded", count: solvedCount, color: "#10b981" },
-    { label: "In Progress", count: inProgCount, color: "#f59e0b" },
-    { label: "Accounts Blocked", count: frozenCount, color: "#06b6d4" },
-    { label: "Escalated", count: escalatedCount, color: "#ef4444" },
-    { label: "Urgent Open", count: openCount, color: "#3b82f6" }
+    { label: "Solved / Refunded", count: solvedCount, color: "#059669" },
+    { label: "Under Investigation", count: inProgCount, color: "#d97706" },
+    { label: "Accounts Blocked", count: frozenCount, color: "#0284c7" },
+    { label: "Urgent Escalated", count: escalatedCount, color: "#dc2626" },
+    { label: "Urgent Open", count: openCount, color: "#7c3aed" }
   ].filter(s => s.count > 0);
 
   // SVG Donut Slices
@@ -466,7 +466,7 @@ function generateSummaryVisualizerHtml() {
   let circlesHtml = '';
 
   if (statusSegments.length === 0) {
-    circlesHtml = `<circle cx="70" cy="70" r="${r}" fill="transparent" stroke="#e2e8f0" stroke-width="20"></circle>`;
+    circlesHtml = `<circle cx="65" cy="65" r="${r}" fill="transparent" stroke="#e2e8f0" stroke-width="14"></circle>`;
   } else {
     circlesHtml = statusSegments.map(s => {
       const pct = s.count / total;
@@ -474,36 +474,35 @@ function generateSummaryVisualizerHtml() {
       const spaceLength = circumference - dashLength;
       const currentOffset = offset;
       offset -= dashLength;
-      return `<circle cx="70" cy="70" r="${r}" fill="transparent" stroke="${s.color}" stroke-width="20" stroke-dasharray="${dashLength} ${spaceLength}" stroke-dashoffset="${currentOffset}"></circle>`;
+      return `<circle cx="65" cy="65" r="${r}" fill="transparent" stroke="${s.color}" stroke-width="14" stroke-dasharray="${dashLength} ${spaceLength}" stroke-dashoffset="${currentOffset}"></circle>`;
     }).join("");
   }
 
   return `
-    <div class="home-summary-graphics-wrap">
-      <div class="donut-chart-box">
-        <div class="donut-svg-wrapper">
-          <svg class="donut-svg" width="130" height="130" viewBox="0 0 140 140">
-            ${circlesHtml}
-          </svg>
-          <div class="donut-center-text">
-            <span class="donut-center-count">${allTickets.length}</span>
-            <span class="donut-center-label">CASES</span>
-          </div>
+    <div class="recovery-metrics-box">
+      <div class="circular-metric" style="background: none; position: relative;">
+        <svg width="130" height="130" viewBox="0 0 130 130" style="transform: rotate(-90deg); position: absolute; inset: 0;">
+          <circle cx="65" cy="65" r="${r}" fill="transparent" stroke="#f1f5f9" stroke-width="14"></circle>
+          ${circlesHtml}
+        </svg>
+        <div class="metric-circle-inner" style="box-shadow: none; z-index: 1;">
+          <span class="metric-circle-val" style="color: var(--text-main);">${allTickets.length}</span>
+          <span class="metric-circle-sub">Total Cases</span>
         </div>
-        <div class="donut-legend-list">
-          ${statusSegments.map(s => {
-            const pct = Math.round((s.count / total) * 100);
-            return `
-              <div class="donut-legend-item">
-                <div style="display: flex; align-items: center; gap: 8px;">
-                  <span class="legend-dot" style="background: ${s.color};"></span>
-                  <span class="legend-label">${s.label}</span>
-                </div>
-                <strong class="legend-val">${s.count} <small style="color: #64748b; font-weight: normal; margin-left: 6px;">(${pct}%)</small></strong>
+      </div>
+      <div class="recovery-details-list">
+        ${statusSegments.map(s => {
+          const pct = Math.round((s.count / total) * 100);
+          return `
+            <div class="rec-row">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span class="legend-dot" style="background: ${s.color};"></span>
+                <span>${s.label}:</span>
               </div>
-            `;
-          }).join("")}
-        </div>
+              <strong style="color: ${s.color}; font-size: 13px;">${s.count} <small style="color: var(--text-dim); font-weight: normal; margin-left: 4px;">(${pct}%)</small></strong>
+            </div>
+          `;
+        }).join("")}
       </div>
     </div>
   `;
