@@ -502,15 +502,13 @@ function renderHomeUrgentList() {
   const container = document.getElementById("homeUrgentList");
   if (!container) return;
 
-  // Handled statuses that should NOT appear in "Immediate Attention" queue
-  const handledStatuses = new Set(['RESOLVED', 'CLOSED', 'FROZEN', 'UNDER_INVESTIGATION', 'ESCALATED']);
-  
+  // Active urgent complaints: Any unresolved complaint with CRITICAL or HIGH severity
   const urgentTickets = allTickets.filter(t => {
     const st = String(t.status || 'OPEN').trim().toUpperCase();
-    const isUnhandled = !handledStatuses.has(st);
+    const isUnresolved = st !== 'RESOLVED' && st !== 'CLOSED';
     const isUrgent = t.severity === 'CRITICAL' || t.severity === 'HIGH';
-    return isUnhandled && isUrgent;
-  }).slice(0, 4);
+    return isUnresolved && isUrgent;
+  });
 
   if (urgentTickets.length === 0) {
     container.innerHTML = `
@@ -526,14 +524,16 @@ function renderHomeUrgentList() {
     return;
   }
 
+  const displayTickets = urgentTickets.slice(0, 5);
+
   const urgentHtml = `
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
       <span style="font-size: 13px; font-weight: 700; color: #dc2626; display: flex; align-items: center; gap: 6px;">
         <i class="fa-solid fa-triangle-exclamation"></i> Urgent Action Required (${urgentTickets.length})
       </span>
-      <button class="btn btn-xs btn-outline" onclick="switchTab('tab-fraud-tickets')">View All</button>
+      <button class="btn btn-xs btn-outline" onclick="switchTab('tab-fraud-tickets')">View All in Queue</button>
     </div>
-    ${urgentTickets.map(t => `
+    ${displayTickets.map(t => `
       <div class="critical-item" onclick="openIncidentDossier('${t.ticket_id}')">
         <div class="crit-left">
           <div class="crit-title-row">
