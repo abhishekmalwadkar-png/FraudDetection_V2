@@ -502,12 +502,24 @@ function renderHomeUrgentList() {
   const container = document.getElementById("homeUrgentList");
   if (!container) return;
 
-  // Active urgent complaints: Any unresolved complaint with CRITICAL or HIGH severity
+  // Statuses where staff action has ALREADY been taken:
+  // Frozen/Blocked, Under Investigation, Escalated, Resolved, Closed, Rejected
+  const actionTakenStatuses = new Set([
+    'FROZEN',
+    'BLOCKED',
+    'UNDER_INVESTIGATION',
+    'ESCALATED',
+    'RESOLVED',
+    'CLOSED',
+    'REJECTED'
+  ]);
+
+  // Urgent Action Required list ONLY shows fresh/open complaints needing immediate action
   const urgentTickets = allTickets.filter(t => {
     const st = String(t.status || 'OPEN').trim().toUpperCase();
-    const isUnresolved = st !== 'RESOLVED' && st !== 'CLOSED';
+    const needsAction = !actionTakenStatuses.has(st);
     const isUrgent = t.severity === 'CRITICAL' || t.severity === 'HIGH';
-    return isUnresolved && isUrgent;
+    return needsAction && isUrgent;
   });
 
   if (urgentTickets.length === 0) {
