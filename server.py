@@ -423,51 +423,6 @@ def api_get_fraud_tickets():
         cursor.close()
         conn.close()
 
-@app.post("/api/fraud-tickets/bulk-update", tags=["Fraud Operations"])
-def api_bulk_update_tickets(payload: BulkTicketUpdateSchema, request: Request):
-    """Batch update multiple fraud tickets and linked customer accounts in a single transaction."""
-    ticket_ids = payload.ticket_ids
-    if not ticket_ids:
-        raise HTTPException(status_code=400, detail="No ticket IDs provided for bulk update.")
-
-    status_val = payload.status
-    if status_val and status_val not in ["UNDER_INVESTIGATION", "FROZEN", "RESOLVED", "CLOSED", "REJECTED", "ESCALATED"]:
-        raise HTTPException(status_code=400, detail=f"Invalid status: '{status_val}'")
-
-    action_note = payload.action_taken or f"Bulk staff action applied ({status_val})"
-    client_ip = request.client.host if request.client else "127.0.0.1"
-
-    conn = get_db_connection()
-    conn.autocommit = True
-    cursor = conn.cursor()
-    updated_count = 0
-    try:
-        for tid in ticket_ids:
-            cursor.execute("""
-                UPDATE fraud_tickets
-                SET status = COALESCE(%s, status),
-                    action_taken = CASE WHEN %s != '' THEN %s ELSE action_taken END,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE ticket_id = %s OR ticket_number = %s
-                RETURNING ticket_number, customer_id;
-            """, (status_val, action_note, action_note, int(tid) if str(tid).isdigit() else -1, str(tid)))
-            res = cursor.fetchone()
-            if res:
-                t_num, c_id = res
-                updated_count += 1
-                if status_val == "FROZEN":
-                    cursor.execute("UPDATE customer_accounts SET status = 'FROZEN' WHERE customer_id = %s;", (c_id,))
-                
-                cursor.execute("""
-                    INSERT INTO audit_logs (ticket_number, actor, action, details, ip_address)
-                    VALUES (%s, %s, %s, %s, %s);
-                """, (t_num, "SOC Lead Investigator (Bulk Action)", f"BULK_STATUS_{status_val}", f"Bulk updated status to {status_val}. Note: {action_note}", client_ip))
-
-        conn.commit()
-        return {"success": True, "updated_count": updated_count, "status": status_val}
-    finally:
-        cursor.close()
-        conn.close()
 
 @app.get("/api/fraud-tickets/{ticket_id}", tags=["Fraud Operations"])
 def api_get_single_ticket(ticket_id: str):
@@ -807,10 +762,11 @@ def api_bulk_update_tickets(payload: BulkTicketUpdateSchema, request: Request):
             SET status = COALESCE(%s, status),
                 assigned_investigator = COALESCE(%s, assigned_investigator),
                 action_taken = CASE WHEN %s != '' THEN %s ELSE action_taken END,
+                recovered_amount = CASE WHEN %s = 'RESOLVED' THEN amount_involved ELSE recovered_amount END,
                 updated_at = CURRENT_TIMESTAMP
             WHERE ticket_id = ANY(%s) OR ticket_number = ANY(%s)
             RETURNING ticket_number, customer_id;
-        """, (status_val, assigned_val, action_note, action_note, int_ids or [-1], str_ids or ['__NONE__']))
+        """, (status_val, assigned_val, action_note, action_note, status_val, int_ids or [-1], str_ids or ['__NONE__']))
         
         rows = cursor.fetchall()
         updated_count = len(rows)

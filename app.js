@@ -1140,11 +1140,12 @@ function clearSelectedTickets() {
 async function executeBulkAction(newStatus, actionNote) {
   if (selectedTicketIds.size === 0) return;
   const count = selectedTicketIds.size;
+  const ticketIdsToUpdate = Array.from(selectedTicketIds);
   const friendlyStatus = newStatus === 'RESOLVED' ? 'Solved / Refunded' : (newStatus === 'FROZEN' ? 'Account Blocked' : (newStatus === 'ESCALATED' ? 'Escalated' : 'In Progress'));
 
   // Optimistically update in-memory state
   allTickets.forEach(t => {
-    if (selectedTicketIds.has(String(t.ticket_id))) {
+    if (ticketIdsToUpdate.includes(String(t.ticket_id))) {
       t.status = newStatus;
       if (newStatus === "RESOLVED") {
         t.recovered_amount = t.amount_involved;
@@ -1163,7 +1164,7 @@ async function executeBulkAction(newStatus, actionNote) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        ticket_ids: Array.from(selectedTicketIds),
+        ticket_ids: ticketIdsToUpdate,
         status: newStatus,
         action_taken: actionNote || `Bulk action: ${friendlyStatus}`
       })
@@ -1174,7 +1175,7 @@ async function executeBulkAction(newStatus, actionNote) {
       showToast(`Successfully updated ${data.updated_count} complaints to "${friendlyStatus}"`, "success");
       loadAllData();
     } else {
-      showToast("Bulk action failed: " + (data.error || "Unknown error"), "error");
+      showToast("Bulk action failed: " + (data.error || data.detail || "Unknown error"), "error");
       loadAllData();
     }
   } catch (err) {
@@ -1480,9 +1481,11 @@ async function executeBulkStaffAssign(newStaff) {
     return;
   }
 
+  const ticketIdsToUpdate = Array.from(selectedTicketIds);
+
   // Optimistically update in-memory state
   allTickets.forEach(t => {
-    if (selectedTicketIds.has(String(t.ticket_id))) {
+    if (ticketIdsToUpdate.includes(String(t.ticket_id))) {
       t.assigned_investigator = newStaff;
     }
   });
@@ -1494,7 +1497,7 @@ async function executeBulkStaffAssign(newStaff) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        ticket_ids: Array.from(selectedTicketIds),
+        ticket_ids: ticketIdsToUpdate,
         assigned_investigator: newStaff,
         action_taken: `Bulk assigned complaints to ${newStaff}`
       })
@@ -1502,6 +1505,9 @@ async function executeBulkStaffAssign(newStaff) {
     const data = await res.json();
     if (data.success) {
       showToast(`Successfully assigned ${data.updated_count} complaints to ${newStaff}`, "success");
+      loadAllData();
+    } else {
+      showToast("Bulk staff assignment failed: " + (data.error || data.detail || "Unknown error"), "error");
       loadAllData();
     }
   } catch (err) {
