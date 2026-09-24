@@ -52,3 +52,11 @@ SERVER_CONNECTION_LIMIT = int(os.getenv("SERVER_CONNECTION_LIMIT", "200"))
 # Security & Governance
 API_SECRET_KEY = os.getenv("API_SECRET_KEY", "").strip()
 ENABLE_SQL_CONSOLE = os.getenv("ENABLE_SQL_CONSOLE", "true").lower() in ("true", "1", "yes")
+
+# Default Portal & Ingestion Settings
+DEFAULT_INVESTIGATOR = os.getenv("DEFAULT_INVESTIGATOR", "SOC Fraud Operations Team")
+DEFAULT_BRANCH = os.getenv("DEFAULT_BRANCH", "Primary Banking Branch")
+DEFAULT_CHANNEL = os.getenv("DEFAULT_CHANNEL", "Process Studio RPA Intake")
+DEFAULT_INCIDENT_TYPE = os.getenv("DEFAULT_INCIDENT_TYPE", "Suspected Fraudulent Transaction")
+DEFAULT_ACCOUNT_TYPE = os.getenv("DEFAULT_ACCOUNT_TYPE", "SAVINGS")
+DEFAULT_SEVERITY = os.getenv("DEFAULT_SEVERITY", "HIGH")

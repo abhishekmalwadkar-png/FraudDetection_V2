@@ -39,7 +39,9 @@ from config import (
     DB_HOST, DB_PORT, DB_USER, DB_PASS, DB_NAME,
     DB_POOL_MIN_CACHED, DB_POOL_MAX_CACHED, DB_POOL_MAX_CONNECTIONS,
     SERVER_THREADS, SERVER_CONNECTION_LIMIT,
-    API_SECRET_KEY, ENABLE_SQL_CONSOLE
+    API_SECRET_KEY, ENABLE_SQL_CONSOLE,
+    DEFAULT_INVESTIGATOR, DEFAULT_BRANCH, DEFAULT_CHANNEL,
+    DEFAULT_INCIDENT_TYPE, DEFAULT_ACCOUNT_TYPE, DEFAULT_SEVERITY
 )
 from dbutils.pooled_db import PooledDB
 
@@ -621,17 +623,17 @@ def _sync_insert_single_ticket(payload: Dict[str, Any], client_ip: str) -> Dict[
                 return norm_map[norm_k]
         return default
 
-    cust_name = str(_get_val("full_name", "customer_name", "fullname", "name", "cust_name", default="Ramesh Kumar")).strip()
+    cust_name = str(_get_val("full_name", "customer_name", "fullname", "name", "cust_name", default=f"Customer {uuid.uuid4().hex[:5].upper()}")).strip()
     if not cust_name:
         raise ValueError("Customer full_name cannot be blank.")
 
-    email = str(_get_val("email", "mail", default=f"{cust_name.lower().replace(' ', '')}_{datetime.now().strftime('%M%S')}@example.com")).strip()
-    phone = str(_get_val("phone", "mobile", "contact", default="+91 98765 00000")).strip()
+    email = str(_get_val("email", "mail", default=f"user_{uuid.uuid4().hex[:6]}@bankdomain.internal")).strip()
+    phone = str(_get_val("phone", "mobile", "contact", default=f"+91 {uuid.uuid4().int % 9000000000 + 1000000000}")).strip()
     cust_code = f"CUST-{uuid.uuid4().hex[:6].upper()}"
     acc_num = str(_get_val("account_number", "account_no", "accountnumber", "acc_num", default=f"ACT-{uuid.uuid4().hex[:6].upper()}")).strip()
-    acc_type = str(_get_val("account_type", "accounttype", default="SAVINGS")).upper().strip()
+    acc_type = str(_get_val("account_type", "accounttype", default=DEFAULT_ACCOUNT_TYPE)).upper().strip()
 
-    raw_amount = _get_val("amount_involved", "amount", "amountinvolved", default="25000")
+    raw_amount = _get_val("amount_involved", "amount", "amountinvolved", default=25000.0)
     try:
         amount = float(str(raw_amount).replace(",", "").replace("₹", "").strip())
         if amount <= 0:
@@ -649,13 +651,13 @@ def _sync_insert_single_ticket(payload: Dict[str, Any], client_ip: str) -> Dict[
         severity = "LOW"
     risk_tier = severity
 
-    incident_type = str(_get_val("incident_type", "incidenttype", "fraud_type", default="Fake QR Code Scam")).strip()
-    channel = str(_get_val("reported_channel", "channel", default="Customer Help Desk")).strip()
-    desc = str(_get_val("description", "desc", "details", default="Customer submitted fraud report.")).strip()
-    suspect = str(_get_val("suspect_entity", "suspect", "merchant", default="Unknown Merchant UPI")).strip()
-    flagged_ip = str(_get_val("flagged_ip_or_location", "location", "ip_address", default="Web Client Terminal")).strip()
-    staff_assignee = str(_get_val("assigned_investigator", "staff", "assigned_to", default="Shreya Deshmukh (Support Lead)")).strip()
-    ticket_num = f"FRD-2026-{uuid.uuid4().hex[:8].upper()}"
+    incident_type = str(_get_val("incident_type", "incidenttype", "fraud_type", default=DEFAULT_INCIDENT_TYPE)).strip()
+    channel = str(_get_val("reported_channel", "channel", default=DEFAULT_CHANNEL)).strip()
+    desc = str(_get_val("description", "desc", "details", default=f"Suspicious activity reported via {channel}.")).strip()
+    suspect = str(_get_val("suspect_entity", "suspect", "merchant", default="Flagged Merchant / Beneficiary")).strip()
+    flagged_ip = str(_get_val("flagged_ip_or_location", "location", "ip_address", default=client_ip)).strip()
+    staff_assignee = str(_get_val("assigned_investigator", "staff", "assigned_to", default=DEFAULT_INVESTIGATOR)).strip()
+    ticket_num = f"FRD-{date.today().year}-{uuid.uuid4().hex[:8].upper()}"
 
     conn = get_db_connection()
     conn.autocommit = True
@@ -698,7 +700,7 @@ def _sync_insert_single_ticket(payload: Dict[str, Any], client_ip: str) -> Dict[
             cursor.execute("""
                 INSERT INTO customer_accounts (customer_id, customer_name, account_number, account_type, balance, branch, opened_date)
                 VALUES (%s, %s, %s, %s, %s, %s, %s);
-            """, (cust_id, cust_name, acc_num, acc_type, amount, "Mumbai Branch", "2024-01-01"))
+            """, (cust_id, cust_name, acc_num, acc_type, amount, DEFAULT_BRANCH, date.today().isoformat()))
 
         # 3. Insert fraud ticket
         cursor.execute("""
@@ -982,6 +984,7 @@ def api_update_ticket(ticket_id: str, payload: FraudTicketUpdateSchema, request:
             cursor.execute("UPDATE customer_accounts SET status = 'FROZEN' WHERE customer_id = %s;", (cust_id,))
 
         client_ip = request.client.host if request.client else "127.0.0.1"
+        actor = request.headers.get("X-User-Name") or DEFAULT_INVESTIGATOR
 
         # Audit log
         log_action = f"STATUS_{status_val}" if status_val else "ASSIGNED_STAFF_UPDATE"
@@ -989,7 +992,7 @@ def api_update_ticket(ticket_id: str, payload: FraudTicketUpdateSchema, request:
         cursor.execute("""
             INSERT INTO audit_logs (ticket_number, actor, action, details, ip_address)
             VALUES (%s, %s, %s, %s, %s);
-        """, (ticket_num, "SOC Lead Investigator", log_action, log_detail, client_ip))
+        """, (ticket_num, actor, log_action, log_detail, client_ip))
 
         conn.commit()
         return {"success": True, "ticket_number": ticket_num, "status": status_val, "assigned_investigator": new_assigned}
@@ -1034,12 +1037,13 @@ def api_bulk_update_tickets(payload: BulkTicketUpdateSchema, request: Request):
                 cursor.execute("UPDATE customer_accounts SET status = 'FROZEN' WHERE customer_id = ANY(%s);", (cust_ids,))
 
         client_ip = request.client.host if request.client else "127.0.0.1"
+        actor = request.headers.get("X-User-Name") or DEFAULT_INVESTIGATOR
         for r in rows:
             t_num = r[0]
             cursor.execute("""
                 INSERT INTO audit_logs (ticket_number, actor, action, details, ip_address)
                 VALUES (%s, %s, %s, %s, %s);
-            """, (t_num, "SOC Staff Supervisor", f"BULK_UPDATE_{status_val or 'STAFF_ASSIGN'}", action_note, client_ip))
+            """, (t_num, actor, f"BULK_UPDATE_{status_val or 'STAFF_ASSIGN'}", action_note, client_ip))
 
         conn.commit()
         return {"success": True, "updated_count": updated_count}
@@ -1062,10 +1066,11 @@ def api_freeze_account(payload: FreezeAccountSchema, request: Request):
             cursor.execute("UPDATE fraud_tickets SET status = 'FROZEN' WHERE ticket_number = %s;", (ticket_num,))
 
         client_ip = request.client.host if request.client else "127.0.0.1"
+        actor = request.headers.get("X-User-Name") or DEFAULT_INVESTIGATOR
         cursor.execute("""
             INSERT INTO audit_logs (ticket_number, actor, action, details, ip_address)
             VALUES (%s, %s, %s, %s, %s);
-        """, (ticket_num or "MANUAL_LOCK", "SOC Security Officer", "ACCOUNT_EMERGENCY_FREEZE", f"Account {acc_num} frozen due to fraud risk", client_ip))
+        """, (ticket_num or "MANUAL_LOCK", actor, "ACCOUNT_EMERGENCY_FREEZE", f"Account {acc_num} frozen due to fraud risk", client_ip))
 
         conn.commit()
         return {"success": True, "account_number": acc_num, "status": "FROZEN"}
