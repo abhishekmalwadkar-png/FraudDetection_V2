@@ -33,8 +33,8 @@ DB_USER = os.getenv("DB_USER", "postgres")
 DB_PASS = os.getenv("DB_PASS", "")
 DB_NAME = os.getenv("DB_NAME", "bank_fraud_portal")
 DB_POOL_MIN_CACHED = int(os.getenv("DB_POOL_MIN_CACHED", "5"))
-DB_POOL_MAX_CACHED = int(os.getenv("DB_POOL_MAX_CACHED", "15"))
-DB_POOL_MAX_CONNECTIONS = int(os.getenv("DB_POOL_MAX_CONNECTIONS", "20"))
+DB_POOL_MAX_CACHED = int(os.getenv("DB_POOL_MAX_CACHED", "25"))
+DB_POOL_MAX_CONNECTIONS = int(os.getenv("DB_POOL_MAX_CONNECTIONS", "50"))
 
 # pgAdmin Credentials
 PGADMIN_HOST = os.getenv("PGADMIN_HOST", "localhost")

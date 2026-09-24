@@ -10,6 +10,7 @@ import io
 import time
 import json
 import uuid
+import asyncio
 import logging
 from decimal import Decimal
 from datetime import datetime, date, timezone
@@ -82,8 +83,8 @@ def clean_db_record(obj: Any) -> Any:
 # -------------------------------------------------------------
 app = FastAPI(
     title="Dummy Bank Portal - Fraud Detection & RPA Intake API",
-    description="Enterprise API Gateway for automated Robotic Process Automation (AutomationEdge) and Banking SOC Fraud Management.",
-    version="2.0.0",
+    description="Enterprise API Gateway for automated Robotic Process Automation (AutomationEdge) and Banking SOC Fraud Management with AsyncIO Non-Blocking High-Concurrency Engine.",
+    version="3.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json"
@@ -605,38 +606,8 @@ def api_get_single_ticket(ticket_id: str):
         cursor.close()
         conn.close()
 
-@app.post("/api/fraud-tickets", status_code=201, tags=["Fraud Operations"])
-async def api_create_fraud_ticket(request: Request):
-    """
-    Intake endpoint for logging new fraud cases into PostgreSQL.
-    Accepts JSON body or Form parameters from AutomationEdge RPA bots, Mobile App, or Web Intake.
-    """
-    if not verify_api_authorization(request):
-        raise HTTPException(status_code=401, detail="Valid API Key or Bearer token is required.")
-
-    # Handle raw content parsing for flexible RPA payloads
-    raw_body = await request.body()
-    raw_text = raw_body.decode("utf-8", errors="ignore")
-    
-    payload: Dict[str, Any] = {}
-    content_type = request.headers.get("content-type", "").lower()
-    
-    if "application/json" in content_type or (raw_text.strip().startswith("{") and raw_text.strip().endswith("}")):
-        try:
-            payload = json.loads(raw_text)
-        except Exception:
-            payload = {}
-    elif "application/x-www-form-urlencoded" in content_type or "multipart/form-data" in content_type:
-        form_data = await request.form()
-        payload = dict(form_data)
-
-    if not payload and "[object Object]" in raw_text:
-        raise HTTPException(
-            status_code=400,
-            detail="Received '[object Object]' as request body. In Process Studio, please use 'JSON.stringify(data)' to format your body field as a valid JSON string before sending."
-        )
-
-    # Helper function to extract fields flexibly regardless of casing/naming
+def _sync_insert_single_ticket(payload: Dict[str, Any], client_ip: str) -> Dict[str, Any]:
+    """Synchronous thread-safe database insertion routine for a single fraud ticket."""
     def _get_val(*keys, default=None):
         if not isinstance(payload, dict):
             return default
@@ -650,10 +621,9 @@ async def api_create_fraud_ticket(request: Request):
                 return norm_map[norm_k]
         return default
 
-    # Field extraction & input validation
     cust_name = str(_get_val("full_name", "customer_name", "fullname", "name", "cust_name", default="Ramesh Kumar")).strip()
     if not cust_name:
-        raise HTTPException(status_code=400, detail="Customer full_name cannot be blank.")
+        raise ValueError("Customer full_name cannot be blank.")
 
     email = str(_get_val("email", "mail", default=f"{cust_name.lower().replace(' ', '')}_{datetime.now().strftime('%M%S')}@example.com")).strip()
     phone = str(_get_val("phone", "mobile", "contact", default="+91 98765 00000")).strip()
@@ -665,11 +635,10 @@ async def api_create_fraud_ticket(request: Request):
     try:
         amount = float(str(raw_amount).replace(",", "").replace("₹", "").strip())
         if amount <= 0:
-            raise HTTPException(status_code=400, detail="amount_involved must be greater than zero.")
+            raise ValueError("amount_involved must be greater than zero.")
     except ValueError:
-        raise HTTPException(status_code=400, detail=f"Invalid numerical amount_involved: '{raw_amount}'")
+        raise ValueError(f"Invalid numerical amount_involved: '{raw_amount}'")
 
-    # Priority / Severity is automatically preset based on the financial amount involved
     if amount >= 100000.0:
         severity = "CRITICAL"
     elif amount >= 50000.0:
@@ -687,8 +656,6 @@ async def api_create_fraud_ticket(request: Request):
     flagged_ip = str(_get_val("flagged_ip_or_location", "location", "ip_address", default="Web Client Terminal")).strip()
     staff_assignee = str(_get_val("assigned_investigator", "staff", "assigned_to", default="Shreya Deshmukh (Support Lead)")).strip()
     ticket_num = f"FRD-2026-{uuid.uuid4().hex[:8].upper()}"
-
-    client_ip = request.client.host if request.client else "127.0.0.1"
 
     conn = get_db_connection()
     conn.autocommit = True
@@ -757,7 +724,6 @@ async def api_create_fraud_ticket(request: Request):
             VALUES (%s, %s, %s, %s, %s, %s);
         """, (ticket_num, cust_name, "Process Studio RPA Intake", "NEW_INCIDENT_REGISTERED", f"Created fraud ticket {ticket_num} for {cust_name} ({incident_type} - ₹{amount:,.2f})", client_ip))
 
-        conn.commit()
         METRICS["total_fraud_tickets_created"] += 1
 
         return {
@@ -769,14 +735,217 @@ async def api_create_fraud_ticket(request: Request):
             "incident_type": incident_type,
             "amount_involved": amount
         }
-    except HTTPException:
-        raise
-    except Exception as ex:
-        logger.error(f"Error creating fraud ticket: {ex}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(ex))
     finally:
         cursor.close()
         conn.close()
+
+
+def _sync_bulk_dummy_intake(target_count: int, client_ip: str) -> List[Dict[str, Any]]:
+    """Synchronous thread-safe database insertion routine for bulk dummy fraud tickets."""
+    import random
+    first_names = ["Aarav", "Pooja", "Vikram", "Neha", "Rahul", "Sneha", "Anand", "Divya", "Suresh", "Kavita", "Rohan", "Meera", "Amit", "Priyanka", "Sanjay", "Ananya", "Deepak", "Swati", "Manoj", "Shilpa", "Kiran", "Aditya"]
+    last_names = ["Sharma", "Patel", "Verma", "Iyer", "Nair", "Kulkarni", "Deshmukh", "Gupta", "Reddy", "Mehta", "Singh", "Joshi", "Choudhury", "Bose", "Menon", "Agarwal"]
+    
+    incident_types = [
+        "Fake QR Code Scam",
+        "UPI Impersonation Fraud",
+        "Phishing Link via SMS / WhatsApp",
+        "SIM Swap Fraud",
+        "Unauthorized ATM Withdrawal",
+        "Fake KYC Update Call",
+        "Investment / Crypto Scam",
+        "Net Banking Credential Theft",
+        "Fake Loan Approval Fee Scam",
+        "International Card Cloning"
+    ]
+    
+    merchants = [
+        "QuickPay Store QR #994",
+        "FastCash Loan Portal",
+        "CryptoPay Desk Singapore",
+        "LuckyDraw UPI Merchant",
+        "Unknown POS Terminal Bangalore",
+        "PhishDesk KYC Support",
+        "GlobalFX Trading Ltd",
+        "EasyLoan Mobile App Hub"
+    ]
+
+    staff_list = [
+        "Shreya Deshmukh (Support Lead)",
+        "Rajesh Nair (Fraud Forensics)",
+        "Pooja Mehta (Compliance Officer)",
+        "Amitabh Sen (Senior Analyst)"
+    ]
+
+    created_tickets = []
+    conn = get_db_connection()
+    conn.autocommit = True
+    cursor = conn.cursor()
+
+    try:
+        for i in range(1, target_count + 1):
+            fname = random.choice(first_names)
+            lname = random.choice(last_names)
+            cust_name = f"{fname} {lname}"
+            email = f"{fname.lower()}.{lname.lower()}{random.randint(100, 999)}@example.com"
+            phone = f"+91 {random.randint(98000, 99999)} {random.randint(10000, 99999)}"
+            acc_num = f"ACT-BATCH-{random.randint(10000, 99999)}"
+            acc_type = random.choice(["SAVINGS", "CURRENT"])
+            incident_type = random.choice(incident_types)
+            amount = round(random.uniform(5000, 95000), 2)
+            suspect = random.choice(merchants)
+            staff_assignee = random.choice(staff_list)
+            
+            if amount >= 75000.0:
+                severity = "CRITICAL"
+            elif amount >= 40000.0:
+                severity = "HIGH"
+            elif amount >= 15000.0:
+                severity = "MEDIUM"
+            else:
+                severity = "LOW"
+            risk_tier = severity
+
+            cust_code = f"CUST-{uuid.uuid4().hex[:6].upper()}"
+            ticket_num = f"FRD-2026-{uuid.uuid4().hex[:8].upper()}"
+            desc = f"Automated batch intake test incident #{i}: Customer noticed unauthorized transaction of ₹{amount:,.2f} via {suspect}."
+
+            cursor.execute("""
+                INSERT INTO customers (customer_code, customer_name, full_name, email, phone, risk_tier)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING customer_id;
+            """, (cust_code, cust_name, cust_name, email, phone, risk_tier))
+            cust_id = cursor.fetchone()[0]
+
+            cursor.execute("""
+                INSERT INTO customer_accounts (customer_id, customer_name, account_number, account_type, balance, branch, opened_date)
+                VALUES (%s, %s, %s, %s, %s, %s, %s);
+            """, (cust_id, cust_name, acc_num, acc_type, amount * 1.5, "Mumbai Central Branch", "2024-01-15"))
+
+            cursor.execute("""
+                INSERT INTO fraud_tickets (
+                    ticket_number, customer_id, customer_name, account_number, incident_type,
+                    amount_involved, recovered_amount, incident_date, reported_channel,
+                    severity, status, assigned_investigator, flagged_ip_or_location,
+                    suspect_entity, description, action_taken
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING ticket_id;
+            """, (
+                ticket_num, cust_id, cust_name, acc_num, incident_type,
+                amount, 0.0, datetime.now(), "Process Studio Batch RPA",
+                severity, "UNDER_INVESTIGATION", staff_assignee,
+                "Process Studio RPA Terminal", suspect,
+                desc, f"Batch intake registered in PostgreSQL; Assigned to {staff_assignee}."
+            ))
+            new_ticket_id = cursor.fetchone()[0]
+
+            cursor.execute("""
+                INSERT INTO audit_logs (ticket_number, customer_name, actor, action, details, ip_address)
+                VALUES (%s, %s, %s, %s, %s, %s);
+            """, (ticket_num, cust_name, "Process Studio Batch Intake", "BULK_INCIDENT_REGISTERED", f"Batch generated ticket {ticket_num} for {cust_name} ({incident_type} - ₹{amount:,.2f})", client_ip))
+
+            created_tickets.append({
+                "ticket_id": new_ticket_id,
+                "ticket_number": ticket_num,
+                "customer_name": cust_name,
+                "account_number": acc_num,
+                "incident_type": incident_type,
+                "amount_involved": amount,
+                "severity": severity
+            })
+
+        METRICS["total_fraud_tickets_created"] += len(created_tickets)
+        return created_tickets
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.post("/api/fraud-tickets", status_code=201, tags=["Fraud Operations"])
+async def api_create_fraud_ticket(request: Request):
+    """
+    Asynchronous Non-Blocking Intake endpoint for logging fraud cases into PostgreSQL.
+    Accepts single JSON object or JSON array for concurrent batch ingestion.
+    """
+    if not verify_api_authorization(request):
+        raise HTTPException(status_code=401, detail="Valid API Key or Bearer token is required.")
+
+    raw_body = await request.body()
+    raw_text = raw_body.decode("utf-8", errors="ignore")
+    
+    payload: Union[Dict[str, Any], List[Dict[str, Any]]] = {}
+    content_type = request.headers.get("content-type", "").lower()
+    
+    if "application/json" in content_type or (raw_text.strip().startswith(("{", "[")) and raw_text.strip().endswith(("}", "]"))):
+        try:
+            payload = json.loads(raw_text)
+        except Exception:
+            payload = {}
+    elif "application/x-www-form-urlencoded" in content_type or "multipart/form-data" in content_type:
+        form_data = await request.form()
+        payload = dict(form_data)
+
+    if not payload and "[object Object]" in raw_text:
+        raise HTTPException(
+            status_code=400,
+            detail="Received '[object Object]' as request body. In Process Studio, please use 'JSON.stringify(data)' to format your body field as a valid JSON string before sending."
+        )
+
+    client_ip = request.client.host if request.client else "127.0.0.1"
+
+    try:
+        # Handle Batch List of tickets asynchronously
+        if isinstance(payload, list):
+            tasks = [asyncio.to_thread(_sync_insert_single_ticket, item, client_ip) for item in payload if isinstance(item, dict)]
+            results = await asyncio.gather(*tasks)
+            return {
+                "success": True,
+                "count": len(results),
+                "message": f"Successfully processed {len(results)} fraud complaints asynchronously.",
+                "tickets": results
+            }
+        elif isinstance(payload, dict):
+            # Run blocking database I/O asynchronously in threadpool
+            result = await asyncio.to_thread(_sync_insert_single_ticket, payload, client_ip)
+            return result
+        else:
+            raise HTTPException(status_code=400, detail="Invalid payload format. Expected JSON object or array.")
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as ex:
+        logger.error(f"Error creating fraud ticket: {ex}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(ex))
+
+
+@app.api_route("/api/bulk-dummy-intake", methods=["GET", "POST"], status_code=201, tags=["Fraud Operations"])
+async def api_bulk_dummy_intake(request: Request, count: Optional[int] = 20):
+    """
+    Asynchronous Non-Blocking endpoint to inject 20 (or custom count) realistic dummy fraud tickets into PostgreSQL.
+    """
+    if request.method == "POST":
+        try:
+            body = await request.json()
+            if isinstance(body, dict) and "count" in body:
+                count = int(body["count"])
+        except Exception:
+            pass
+
+    target_count = max(1, min(100, count or 20))
+    client_ip = request.client.host if request.client else "127.0.0.1"
+
+    try:
+        # Run bulk insertion asynchronously on threadpool to prevent event loop starvation
+        created_tickets = await asyncio.to_thread(_sync_bulk_dummy_intake, target_count, client_ip)
+        return {
+            "success": True,
+            "count": len(created_tickets),
+            "message": f"Successfully generated and inserted {len(created_tickets)} dummy fraud tickets asynchronously into PostgreSQL.",
+            "tickets": created_tickets
+        }
+    except Exception as ex:
+        logger.error(f"Error generating bulk dummy tickets: {ex}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(ex))
+
 
 @app.patch("/api/fraud-tickets/{ticket_id}", tags=["Fraud Operations"])
 def api_update_ticket(ticket_id: str, payload: FraudTicketUpdateSchema, request: Request):
