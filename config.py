@@ -44,8 +44,8 @@ PGADMIN_PASSWORD = os.getenv("PGADMIN_PASSWORD", "")
 PGADMIN_DEFAULT_DATABASE = os.getenv("PGADMIN_DEFAULT_DATABASE", "bank_fraud_portal")
 
 # Portal Web Server Configuration
-PORTAL_HOST = os.getenv("PORTAL_HOST", "127.0.0.1")
-PORTAL_PORT = int(os.getenv("PORTAL_PORT", "5050"))
+PORTAL_HOST = os.getenv("PORTAL_HOST", "0.0.0.0")
+PORTAL_PORT = int(os.getenv("PORT", os.getenv("PORTAL_PORT", "5050")))
 SERVER_THREADS = int(os.getenv("SERVER_THREADS", "16"))
 SERVER_CONNECTION_LIMIT = int(os.getenv("SERVER_CONNECTION_LIMIT", "200"))
 
