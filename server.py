@@ -449,7 +449,7 @@ def api_get_fraud_tickets(
 
         sql = f"""
             SELECT 
-                t.ticket_id, t.ticket_number, t.customer_id, c.customer_code, c.full_name, c.email, c.phone, c.risk_tier,
+                t.ticket_id, t.ticket_number, t.customer_id, c.customer_code, COALESCE(t.customer_name, c.full_name) as customer_name, c.email, c.phone, c.risk_tier,
                 t.account_number, ca.account_type, ca.balance, ca.status as account_status,
                 t.incident_type, t.amount_involved, t.recovered_amount, t.incident_date,
                 t.reported_channel, t.severity, t.status, t.assigned_investigator,
@@ -523,7 +523,7 @@ def api_get_single_ticket(ticket_id: str):
     try:
         cursor.execute("""
             SELECT 
-                t.ticket_id, t.ticket_number, t.customer_id, c.customer_code, c.full_name, c.email, c.phone, c.risk_tier,
+                t.ticket_id, t.ticket_number, t.customer_id, c.customer_code, COALESCE(t.customer_name, c.full_name) as customer_name, c.email, c.phone, c.risk_tier,
                 c.address, c.city, c.state,
                 t.account_number, ca.account_type, ca.balance, ca.status as account_status, ca.branch,
                 t.incident_type, t.amount_involved, t.recovered_amount, t.incident_date,
@@ -663,28 +663,23 @@ def _sync_insert_single_ticket(payload: Dict[str, Any], client_ip: str) -> Dict[
     conn.autocommit = True
     cursor = conn.cursor()
     try:
-        # 1. Check if customer already exists
+        # 1. Check if customer already exists by exact name and contact info
         cursor.execute("""
             SELECT customer_id, full_name, risk_tier 
             FROM customers 
-            WHERE email = %s OR phone = %s OR full_name = %s 
+            WHERE LOWER(full_name) = LOWER(%s) AND (email = %s OR phone = %s)
             ORDER BY customer_id ASC 
             LIMIT 1;
-        """, (email, phone, cust_name))
+        """, (cust_name, email, phone))
         existing_cust = cursor.fetchone()
 
         if existing_cust:
             cust_id = existing_cust[0]
             cursor.execute("""
                 UPDATE customers 
-                SET full_name = %s, customer_name = %s, email = %s, phone = %s, risk_tier = %s 
+                SET full_name = %s, customer_name = %s, email = COALESCE(%s, email), phone = COALESCE(%s, phone), risk_tier = %s 
                 WHERE customer_id = %s;
             """, (cust_name, cust_name, email, phone, risk_tier, cust_id))
-            cursor.execute("""
-                UPDATE customer_accounts
-                SET customer_name = %s
-                WHERE customer_id = %s;
-            """, (cust_name, cust_id))
         else:
             cursor.execute("""
                 INSERT INTO customers (customer_code, customer_name, full_name, email, phone, risk_tier)
