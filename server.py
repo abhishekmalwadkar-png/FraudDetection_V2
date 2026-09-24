@@ -726,6 +726,7 @@ def _sync_insert_single_ticket(payload: Dict[str, Any], client_ip: str) -> Dict[
             VALUES (%s, %s, %s, %s, %s, %s);
         """, (ticket_num, cust_name, "Process Studio RPA Intake", "NEW_INCIDENT_REGISTERED", f"Created fraud ticket {ticket_num} for {cust_name} ({incident_type} - ₹{amount:,.2f})", client_ip))
 
+        conn.commit()
         METRICS["total_fraud_tickets_created"] += 1
 
         return {
@@ -856,6 +857,7 @@ def _sync_bulk_dummy_intake(target_count: int, client_ip: str) -> List[Dict[str,
                 "severity": severity
             })
 
+        conn.commit()
         METRICS["total_fraud_tickets_created"] += len(created_tickets)
         return created_tickets
     finally:
